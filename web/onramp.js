@@ -26,7 +26,8 @@ async function api(path, options = {}) {
   if (options.body) headers["Content-Type"] = "application/json";
   const r = await fetch(path, { ...options, headers });
   const b = await r.json();
-  if (!r.ok) throw new Error(`${b.message || "请求失败"} (${b.code || r.status})`);
+  if (!r.ok)
+    throw new Error(`${b.message || "请求失败"} (${b.code || r.status})`);
   return b;
 }
 function message(s) {
@@ -228,7 +229,8 @@ async function boot() {
         : "真实网关 · " +
           (c.providers.every((p) => p.sandbox) ? "Sandbox" : "含 Production");
     const requested = new URLSearchParams(location.search).get("provider");
-    selected = c.providers.find(p => p.id === requested)?.id || c.providers[0]?.id;
+    selected =
+      c.providers.find((p) => p.id === requested)?.id || c.providers[0]?.id;
     for (const p of c.providers) {
       const b = document.createElement("button");
       b.className = "plan";

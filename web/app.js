@@ -127,7 +127,10 @@ async function boot() {
       x.onchange = resetIntent;
     });
     const requested = new URLSearchParams(location.search).get("gateway");
-    const available = [...document.querySelectorAll("[name=gateway]")].find(x => !x.disabled && x.value === requested) || document.querySelector("[name=gateway]:not(:disabled)");
+    const available =
+      [...document.querySelectorAll("[name=gateway]")].find(
+        (x) => !x.disabled && x.value === requested,
+      ) || document.querySelector("[name=gateway]:not(:disabled)");
     if (available) available.checked = true;
     else $("checkout").disabled = true;
     if (mode === "demo") {
