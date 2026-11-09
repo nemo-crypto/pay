@@ -19,11 +19,11 @@ func Handler() http.Handler {
 		kind := "text/html; charset=utf-8"
 		switch path {
 		case "/onramp", "/onramp/checkout":
- file = "onramp.html"
- case "/onramp.js":
- file = "onramp.js"
- kind = "text/javascript; charset=utf-8"
- case "/app.js":
+			file = "onramp.html"
+		case "/onramp.js":
+			file = "onramp.js"
+			kind = "text/javascript; charset=utf-8"
+		case "/app.js":
 			file = "app.js"
 			kind = "text/javascript; charset=utf-8"
 		case "/style.css":
