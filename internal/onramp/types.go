@@ -107,6 +107,9 @@ func str(m map[string]any, k string) string {
 }
 func object(m map[string]any, k string) map[string]any { v, _ := m[k].(map[string]any); return v }
 func jsonMap(b []byte) (map[string]any, error) {
+	if _, err := canonical(b); err != nil {
+		return nil, err
+	}
 	var v map[string]any
 	d := json.NewDecoder(bytes.NewReader(b))
 	d.UseNumber()

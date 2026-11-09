@@ -46,9 +46,21 @@ func New(db *sql.DB, mode, public string) (*Engine, error) {
 	}
 	_, e = db.Exec(`CREATE TABLE IF NOT EXISTS onramp_orders(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,provider TEXT NOT NULL,idem TEXT NOT NULL,fingerprint TEXT NOT NULL,ref TEXT,status TEXT NOT NULL,next_check INTEGER NOT NULL,created INTEGER NOT NULL,data TEXT NOT NULL,UNIQUE(user_id,idem),UNIQUE(provider,ref));
  CREATE TABLE IF NOT EXISTS onramp_events(provider TEXT NOT NULL,event_id TEXT NOT NULL,order_id TEXT NOT NULL,snapshot TEXT NOT NULL,processed INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL,PRIMARY KEY(provider,event_id));
+ CREATE TABLE IF NOT EXISTS onramp_tokens(provider TEXT PRIMARY KEY,token TEXT NOT NULL,previous TEXT NOT NULL,expires INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS onramp_mock(id TEXT PRIMARY KEY,provider TEXT NOT NULL,payload TEXT NOT NULL);`)
 	if e != nil {
 		return nil, e
+	}
+	if a := adapters["transak"]; a != nil && mode != "demo" {
+		a.TokenStore = db
+		var expiry int64
+		err := db.QueryRow("SELECT token,previous,expires FROM onramp_tokens WHERE provider='transak'").Scan(&a.Token, &a.PreviousToken, &expiry)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+		if err == nil {
+			a.TokenExpires = time.Unix(expiry, 0)
+		}
 	}
 	if mode == "demo" {
 		for _, a := range adapters {

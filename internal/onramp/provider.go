@@ -3,6 +3,7 @@ package onramp
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 )
 
 type Adapter struct {
+	TokenStore                                                                    *sql.DB
 	Name, Key, Secret, WebhookSecret, PublicURL, API, SessionAPI, Widget, RampKey string
 	HTTP                                                                          *http.Client
 	Sandbox                                                                       bool
@@ -29,6 +31,9 @@ type Adapter struct {
 
 func Adapters(mode, public string) (map[string]*Adapter, error) {
 	out := map[string]*Adapter{}
+	if env := os.Getenv("ONRAMP_ENV"); env != "" && env != "sandbox" && env != "production" {
+		return nil, fmt.Errorf("ONRAMP_ENV must be sandbox or production")
+	}
 	enabled := Names
 	if mode != "demo" {
 		enabled = nil
@@ -149,6 +154,11 @@ func (a *Adapter) accessToken(ctx context.Context) (string, error) {
 	exp, e := strconv.ParseInt(str(d, "expiresAt"), 10, 64)
 	if e != nil || token == "" || exp <= time.Now().Unix() {
 		return "", fmt.Errorf("invalid partner token")
+	}
+	if a.TokenStore != nil {
+		if _, err := a.TokenStore.ExecContext(ctx, "INSERT INTO onramp_tokens VALUES(?,?,?,?) ON CONFLICT(provider) DO UPDATE SET token=excluded.token,previous=excluded.previous,expires=excluded.expires", a.Name, token, a.Token, exp); err != nil {
+			return "", fmt.Errorf("token persistence failed")
+		}
 	}
 	a.PreviousToken = a.Token
 	a.Token = token
