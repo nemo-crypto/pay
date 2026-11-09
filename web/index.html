@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Pay Lab · 双通道储值</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="/" class="brand">◈ PAY <span>LAB</span></a
+      ><span id="mode" class="badge">正在连接服务</span>
+    </header>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">ONE BALANCE. TWO WAYS TO PAY.</p>
+        <h1>从付款，到每一笔到账。</h1>
+        <p>信用卡与稳定币，统一的订单、点数余额和交易记录。</p>
+      </section>
+      <div class="layout">
+        <section class="panel">
+          <div class="heading">
+            <h2 id="title">选择储值方案</h2>
+            <span class="subtle">以服务端报价为准</span>
+          </div>
+          <div id="login" hidden>
+            <label
+              >联调访问令牌<input
+                type="password"
+                id="token"
+                autocomplete="off" /></label
+            ><button id="authenticate">连接账户</button>
+            <p class="subtle">
+              仅保存在当前页面内存。已有前端应接入自己的登录流程。
+            </p>
+          </div>
+          <div id="plans" class="plans"></div>
+          <fieldset id="gateways">
+            <legend>付款方式</legend>
+            <label class="gateway"
+              ><input type="radio" name="gateway" value="stripe" checked /><span
+                ><strong>Stripe</strong
+                ><small>信用卡 · Stripe Checkout</small></span
+              ><b>↗</b></label
+            ><label class="gateway"
+              ><input type="radio" name="gateway" value="allscale" /><span
+                ><strong>Allscale</strong
+                ><small>USDT / USDC · 可用网络和币种以收银台为准</small></span
+              ><b>↗</b></label
+            >
+          </fieldset>
+          <div id="recovery" hidden class="notice">
+            <span id="pending-text"></span>
+            <div class="actions">
+              <button id="resume" class="secondary">继续付款</button
+              ><button id="abandon" class="secondary">取消提示</button>
+            </div>
+          </div>
+          <button id="checkout" class="primary">前往支付 →</button>
+          <section id="simulation" hidden>
+            <h2>本地模拟收银台</h2>
+            <p>
+              不会扣款，也不会发起链上交易。选择一个结果，观察订单与余额变化。
+            </p>
+            <div class="actions">
+              <button data-outcome="succeeded">模拟付款成功</button
+              ><button class="secondary" data-outcome="failed">模拟失败</button
+              ><button class="secondary" data-outcome="expired">模拟过期</button
+              ><button class="secondary" data-outcome="pending">
+                链上确认中</button
+              ><button class="secondary" data-outcome="flagged">
+                少付 / 人工复核
+              </button>
+            </div>
+            <label class="check"
+              ><input
+                id="drop-webhook"
+                type="checkbox"
+              />模拟回调丢失，让后台自动对账恢复</label
+            ><a class="back" href="/">返回方案</a>
+          </section>
+          <div id="status" role="status" aria-live="polite">正在加载…</div>
+        </section>
+        <aside class="panel balance">
+          <span class="eyebrow">YOUR BALANCE</span>
+          <div><strong id="balance">—</strong><span>点数</span></div>
+          <p>付款回跳只是查询入口。仅在服务端确认支付并完成入账后更新余额。</p>
+          <div class="flow">
+            <span>01 · 创建订单</span><span>02 · 网关确认</span
+            ><span>03 · 点数入账</span>
+          </div>
+          <button id="refresh" class="secondary">刷新订单与余额</button>
+        </aside>
+      </div>
+      <section class="panel history">
+        <div class="heading">
+          <h2>储值记录</h2>
+          <span class="subtle">最新 20 笔</span>
+        </div>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>订单</th>
+                <th>方式</th>
+                <th>金额</th>
+                <th>状态</th>
+                <th>到账点数</th>
+              </tr>
+            </thead>
+            <tbody id="orders"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <footer>Go · SQLite · Stripe Checkout · Allscale Checkout</footer>
+  </body>
+</html>

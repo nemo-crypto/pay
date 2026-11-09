@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+/data/
+/bin/
+coverage.out
+*.db
+*.db-shm
+*.db-wal
+node_modules/
+test-results/
