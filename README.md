@@ -1,0 +1,2 @@
+# pay
+Stripe、Allscale
