@@ -126,7 +126,8 @@ async function boot() {
       x.disabled = !data.gateways.includes(x.value);
       x.onchange = resetIntent;
     });
-    const available = document.querySelector("[name=gateway]:not(:disabled)");
+    const requested = new URLSearchParams(location.search).get("gateway");
+    const available = [...document.querySelectorAll("[name=gateway]")].find(x => !x.disabled && x.value === requested) || document.querySelector("[name=gateway]:not(:disabled)");
     if (available) available.checked = true;
     else $("checkout").disabled = true;
     if (mode === "demo") {
@@ -135,6 +136,7 @@ async function boot() {
       $("login").hidden = false;
     }
     if (active) {
+      $("catalog").hidden = true;
       $("plans").hidden = true;
       $("gateways").hidden = true;
       $("checkout").hidden = true;

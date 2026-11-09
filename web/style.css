@@ -397,3 +397,13 @@ footer {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+#catalog { margin-bottom: 32px; }
+.provider-catalog { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
+.provider-card { background: #fff; border: 1px solid #dde6e1; border-radius: 14px; padding: 22px; }
+.provider-card h3 { font-size: 20px; margin: 10px 0; }
+.provider-card p { color: #688079; font-size: 12px; }
+.provider-card>div { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 22px; font-size: 12px; }
+.provider-card a { text-underline-offset: 4px; }
+@media(max-width:760px) { .provider-catalog { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; } .provider-card{padding:16px;} .provider-card h3{font-size:17px;} .provider-card>div{gap:12px;} }
+@media(max-width:360px) { .provider-catalog { grid-template-columns:1fr; } }

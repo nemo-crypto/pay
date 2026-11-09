@@ -73,7 +73,7 @@ func validInput(in Input) error {
 		known = known || in.Provider == n
 	}
 	if !known || !addressRE.MatchString(in.Wallet) || in.Wallet == "0x0000000000000000000000000000000000000000" || in.FiatMinor < 3000 || in.FiatMinor > 100000 {
-		return fmt.Errorf("provider、EVM 钱包或金额无效（USD 30–1000）")
+		return validation("请选择已支持的供应商，填写有效的 EVM 钱包地址和 USD 30–1000 金额")
 	}
 	return nil
 }

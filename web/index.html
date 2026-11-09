@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Pay Lab · 双通道储值</title>
+    <title>Pay Lab · 六通道支付实验室</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/app.js"></script>
   </head>
@@ -17,11 +17,12 @@
     </header>
     <main>
       <section class="hero">
-        <p class="eyebrow">ONE BALANCE. TWO WAYS TO PAY.</p>
+        <p class="eyebrow">SIX PROVIDERS. EVERY STEP CONNECTED.</p>
         <h1>从付款，到每一笔到账。</h1>
-        <p>信用卡与稳定币，统一的订单、点数余额和交易记录。</p>
+        <p>从信用卡储值、稳定币支付到法币买币，六种通道，共用一份入门路线。</p>
       </section>
-      <div class="layout">
+<section id="catalog" aria-labelledby="catalog-title"><div class="heading"><h2 id="catalog-title">选择你的支付路线</h2><a class="subtle" href="/guides/">从零接入 · 完整教程 ↗</a></div><div class="provider-catalog"><article class="provider-card"><span class="eyebrow">平台储值</span><h3>Stripe</h3><p>信用卡付款 → 平台点数</p><div><a href="/?gateway=stripe#topup">进入演示 →</a><a href="/guides/stripe">接入教程 ↗</a></div></article><article class="provider-card"><span class="eyebrow">平台储值</span><h3>Allscale</h3><p>USDT / USDC → 平台点数</p><div><a href="/?gateway=allscale#topup">进入演示 →</a><a href="/guides/allscale">接入教程 ↗</a></div></article><article class="provider-card"><span class="eyebrow">钱包买币</span><h3>MoonPay</h3><p>法币付款 → 钱包资产</p><div><a href="/onramp?provider=moonpay">进入演示 →</a><a href="/guides/moonpay">接入教程 ↗</a></div></article><article class="provider-card"><span class="eyebrow">钱包买币</span><h3>Alchemy Pay</h3><p>法币付款 → 钱包资产</p><div><a href="/onramp?provider=alchemypay">进入演示 →</a><a href="/guides/alchemypay">接入教程 ↗</a></div></article><article class="provider-card"><span class="eyebrow">钱包买币</span><h3>Transak</h3><p>法币付款 → 钱包资产</p><div><a href="/onramp?provider=transak">进入演示 →</a><a href="/guides/transak">接入教程 ↗</a></div></article><article class="provider-card"><span class="eyebrow">钱包买币</span><h3>Ramp</h3><p>法币付款 → 钱包资产</p><div><a href="/onramp?provider=ramp">进入演示 →</a><a href="/guides/ramp">接入教程 ↗</a></div></article></div><p class="subtle">储值订单更新平台点数；买币订单跟踪钱包资产交付，两种业务各自记账。演示模式使用本地 mock，无需真实密钥。</p></section>
+      <div class="layout" id="topup">
         <section class="panel">
           <div class="heading">
             <h2 id="title">选择储值方案</h2>

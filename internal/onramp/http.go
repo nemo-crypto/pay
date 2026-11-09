@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nemo-crypto/pay/internal/auth"
+	"github.com/nemo-crypto/pay/internal/payment"
 )
 
 func respond(w http.ResponseWriter, status int, v any) {
@@ -21,30 +22,32 @@ func respond(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 func fail(w http.ResponseWriter, err error) {
-	status := 400
-	code := "REQUEST_FAILED"
+	result := &APIError{HTTP: 503, Code: "INTERNAL", Message: "服务暂时不可用，请保留原订单后重试", Retriable: true}
+	var safe *APIError
 	switch {
+	case errors.As(err, &safe):
+		result = safe
 	case errors.Is(err, ErrNotFound):
-		status = 404
-		code = "NOT_FOUND"
+		result = &APIError{HTTP: 404, Code: "NOT_FOUND", Message: "订单或通道不存在"}
 	case errors.Is(err, ErrConflict):
-		status = 409
-		code = "CONFLICT"
+		result = &APIError{HTTP: 409, Code: "CONFLICT", Message: "请求与已有订单或当前操作状态冲突，请查询原订单"}
 	case errors.Is(err, ErrPending):
-		status = 409
-		code = "WAITING_PROVIDER_REFERENCE"
+		result = &APIError{HTTP: 409, Code: "WAITING_PROVIDER_REFERENCE", Message: "供应商订单尚未生成或缺少查询引用，请等待通知或核对后绑定", Retriable: true}
 	}
-	respond(w, status, map[string]string{"code": code, "message": "操作未完成，请核对请求、订单状态或网关配置；不要重复创建购买意图"})
+	if result.Retriable {
+		w.Header().Set("Retry-After", "30")
+	}
+	respond(w, result.HTTP, map[string]any{"code": result.Code, "message": result.Message, "retriable": result.Retriable, "trace_id": payment.ID("trace_")})
 }
 func read(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 65536)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
-		return err
+		return validation("请求 JSON 格式错误或包含未知字段")
 	}
 	if err := d.Decode(new(any)); err != io.EOF {
-		return ErrConflict
+		return validation("只允许一个 JSON 对象")
 	}
 	return nil
 }

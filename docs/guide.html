@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Title}} · Pay Lab</title><link rel="stylesheet" href="/guides/guide.css"><script type="module" src="/guides/guide.js"></script></head>
+<body><header><a class="brand" href="/">◈ PAY <span>LAB</span></a><nav><a href="/">储值演示</a><a href="/onramp">买币演示</a><a href="{{.RawURL}}">Markdown 原文</a></nav></header>
+<div class="reading-layout"><aside><p class="eyebrow">SIX PROVIDERS · ONE PLAYBOOK</p><a class="overview" href="/guides/">教程总览</a><nav class="providers" aria-label="供应商教程">{{range .Links}}<a href="{{.URL}}" {{if .Current}}aria-current="page"{{end}}>{{.Title}} <span>↗</span></a>{{end}}</nav><p class="eyebrow">本页目录</p><nav id="toc" aria-label="本页目录"></nav></aside><main><div class="reading-heading"><span>PAYMENT INTEGRATION GUIDE</span><a href="{{.RawURL}}">查看原文 ↗</a></div><article>{{.Content}}</article><footer>Go · 本地 mock 闭环 · 每家协议独立验证</footer></main></div><div id="copy-status" role="status" aria-live="polite"></div></body></html>

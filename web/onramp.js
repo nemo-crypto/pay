@@ -26,7 +26,7 @@ async function api(path, options = {}) {
   if (options.body) headers["Content-Type"] = "application/json";
   const r = await fetch(path, { ...options, headers });
   const b = await r.json();
-  if (!r.ok) throw new Error(b.code || b.message || `HTTP ${r.status}`);
+  if (!r.ok) throw new Error(`${b.message || "请求失败"} (${b.code || r.status})`);
   return b;
 }
 function message(s) {
@@ -179,8 +179,8 @@ document.querySelectorAll("[data-action]").forEach(
         render(o);
         await watch();
       } catch (e) {
-        message(e.message);
         await watch();
+        message(e.message);
       }
     }),
 );
@@ -227,7 +227,8 @@ async function boot() {
         ? "本地 mock · 不扣款"
         : "真实网关 · " +
           (c.providers.every((p) => p.sandbox) ? "Sandbox" : "含 Production");
-    selected = c.providers[0]?.id;
+    const requested = new URLSearchParams(location.search).get("provider");
+    selected = c.providers.find(p => p.id === requested)?.id || c.providers[0]?.id;
     for (const p of c.providers) {
       const b = document.createElement("button");
       b.className = "plan";

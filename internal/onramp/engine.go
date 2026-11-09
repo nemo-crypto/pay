@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -52,6 +51,9 @@ func New(db *sql.DB, mode, public string) (*Engine, error) {
  CREATE TABLE IF NOT EXISTS onramp_mock(id TEXT PRIMARY KEY,provider TEXT NOT NULL,payload TEXT NOT NULL);`)
 	if e != nil {
 		return nil, e
+	}
+	if err := migrateInbox(db); err != nil {
+		return nil, err
 	}
 	if a := adapters["transak"]; a != nil && mode != "demo" {
 		a.TokenStore = db
@@ -128,11 +130,11 @@ func (e *Engine) Create(ctx context.Context, user, key, ip string, in Input) (Or
 		return Order{}, err
 	}
 	if len(key) < 8 || len(key) > 128 {
-		return Order{}, fmt.Errorf("Idempotency-Key 长度须为8–128")
+		return Order{}, validation("Idempotency-Key 长度须为8–128")
 	}
 	a := e.Adapters[in.Provider]
 	if a == nil {
-		return Order{}, fmt.Errorf("通道未启用")
+		return Order{}, &APIError{Code: "PROVIDER_DISABLED", Message: "当前供应商通道尚未配置，请选择已启用的通道", HTTP: 503}
 	}
 	in.Wallet = strings.ToLower(in.Wallet)
 	b, _ := json.Marshal(in)
@@ -191,8 +193,10 @@ func (e *Engine) Create(ctx context.Context, user, key, ip string, in Input) (Or
 	}
 	o = current
 	if createErr != nil {
-		o.Detail = "checkout_creation_unknown"
-		o.Status = "review"
+		if o.Ref == "" && o.Status == "pending" && o.Detail == "awaiting_checkout" {
+			o.Detail = "checkout_creation_unknown"
+			o.Status = "review"
+		}
 	} else if o.Status == "pending" {
 		o.Checkout = checkout
 		if e.Mode == "demo" {
@@ -217,7 +221,7 @@ func (e *Engine) Ingest(ctx context.Context, r *http.Request, b []byte, name str
 	}
 	event, err := a.Verify(r, b)
 	if err != nil {
-		return fmt.Errorf("invalid webhook: %w", err)
+		return &APIError{HTTP: 400, Code: "INVALID_WEBHOOK", Message: "回调签名或内容无效"}
 	}
 	id := event.Snapshot.ExternalID
 	if name == "ramp" {
@@ -227,7 +231,7 @@ func (e *Engine) Ingest(ctx context.Context, r *http.Request, b []byte, name str
 			return err
 		}
 		if r.URL.Query().Get("binding") != o.CallbackToken {
-			return fmt.Errorf("callback binding mismatch")
+			return &APIError{HTTP: 400, Code: "INVALID_WEBHOOK", Message: "回调订单关联无效"}
 		}
 	}
 	if id == "" { // 查询已由 SDK 事件 + 服务端查询核对后绑定的订单。
@@ -243,7 +247,7 @@ func (e *Engine) Ingest(ctx context.Context, r *http.Request, b []byte, name str
 		return ErrConflict
 	}
 	raw, _ := json.Marshal(event.Snapshot)
-	_, err = e.DB.ExecContext(ctx, "INSERT INTO onramp_events VALUES(?,?,?,?,0,?) ON CONFLICT(provider,event_id) DO NOTHING", name, event.ID, id, string(raw), time.Now().Unix())
+	_, err = e.DB.ExecContext(ctx, "INSERT INTO onramp_events(provider,event_id,order_id,snapshot,processed,created) VALUES(?,?,?,?,0,?) ON CONFLICT(provider,event_id) DO NOTHING", name, event.ID, id, string(raw), time.Now().Unix())
 	return err
 }
 func (e *Engine) apply(ctx context.Context, id string, s Snapshot, eventID string) error {
@@ -309,23 +313,29 @@ func (e *Engine) Tick(ctx context.Context) {
 		return
 	}
 	defer e.worker.Unlock()
-	rows, err := e.DB.QueryContext(ctx, "SELECT order_id,snapshot,event_id FROM onramp_events WHERE processed=0 ORDER BY created LIMIT 100")
+	rows, err := e.DB.QueryContext(ctx, "SELECT provider,order_id,snapshot,event_id,attempts FROM onramp_events WHERE processed=0 AND dead_letter=0 AND next_attempt<=? ORDER BY next_attempt,created LIMIT 100", time.Now().Unix())
 	if err != nil {
 		return
 	}
-	type job struct{ id, raw, event string }
-	jobs := []job{}
+	jobs := []inboxJob{}
 	for rows.Next() {
-		var j job
-		if rows.Scan(&j.id, &j.raw, &j.event) == nil {
+		var j inboxJob
+		if rows.Scan(&j.Provider, &j.OrderID, &j.Raw, &j.ID, &j.Attempts) == nil {
 			jobs = append(jobs, j)
 		}
 	}
 	rows.Close()
 	for _, j := range jobs {
+		if ctx.Err() != nil {
+			return
+		}
 		var s Snapshot
-		if json.Unmarshal([]byte(j.raw), &s) == nil {
-			_ = e.apply(ctx, j.id, s, j.event)
+		if json.Unmarshal([]byte(j.Raw), &s) != nil {
+			_ = e.deferEvent(ctx, j, errInvalidEvent)
+			continue
+		}
+		if err := e.apply(ctx, j.OrderID, s, j.ID); err != nil {
+			_ = e.deferEvent(ctx, j, err)
 		}
 	}
 	rows, err = e.DB.QueryContext(ctx, "SELECT data FROM onramp_orders WHERE status IN ('pending','processing') AND next_check<=? AND created>? ORDER BY next_check LIMIT 50", time.Now().Unix(), time.Now().Add(-7*24*time.Hour).Unix())
@@ -367,7 +377,7 @@ func (e *Engine) Sync(ctx context.Context, user, id string) (Order, error) {
 	}
 	s, err := a.Fetch(ctx, o)
 	if err != nil {
-		return o, err
+		return o, providerError(err)
 	}
 	if err = e.apply(ctx, id, s, ""); err != nil {
 		return o, err
@@ -390,7 +400,7 @@ func (e *Engine) Bind(ctx context.Context, user, id, ref, view string) (Order, e
 	}
 	s, err := a.Fetch(ctx, o)
 	if err != nil {
-		return o, err
+		return o, providerError(err)
 	}
 	if s.Ref != ref {
 		return o, ErrConflict
@@ -455,7 +465,7 @@ func (e *Engine) Advance(ctx context.Context, user, id, action string, deliver b
 		o.DemoStage = 4
 		status = "cancelled"
 	default:
-		return o, fmt.Errorf("unknown demo action")
+		return o, validation("无效的演示操作")
 	}
 	payload := mockPayload(o, status)
 	raw, _ := json.Marshal(payload)
@@ -483,7 +493,7 @@ func (e *Engine) Advance(ctx context.Context, user, id, action string, deliver b
 
 func (e *Engine) Health(ctx context.Context) (map[string]int64, error) {
 	result := map[string]int64{}
-	for name, query := range map[string]string{"unprocessed_events": "SELECT COUNT(*) FROM onramp_events WHERE processed=0", "review_orders": "SELECT COUNT(*) FROM onramp_orders WHERE status='review'", "awaiting_provider_reference": "SELECT COUNT(*) FROM onramp_orders WHERE ref IS NULL", "stale_pending": "SELECT COUNT(*) FROM onramp_orders WHERE status IN ('pending','processing') AND created < strftime('%s','now')-604800"} {
+	for name, query := range map[string]string{"unprocessed_events": "SELECT COUNT(*) FROM onramp_events WHERE processed=0", "deferred_events": "SELECT COUNT(*) FROM onramp_events WHERE processed=0 AND dead_letter=0 AND next_attempt>strftime('%s','now')", "dead_letter_events": "SELECT COUNT(*) FROM onramp_events WHERE processed=0 AND dead_letter=1", "review_orders": "SELECT COUNT(*) FROM onramp_orders WHERE status='review'", "awaiting_provider_reference": "SELECT COUNT(*) FROM onramp_orders WHERE ref IS NULL", "stale_pending": "SELECT COUNT(*) FROM onramp_orders WHERE status IN ('pending','processing') AND created < strftime('%s','now')-604800"} {
 		var n int64
 		if err := e.DB.QueryRowContext(ctx, query).Scan(&n); err != nil {
 			return nil, err
