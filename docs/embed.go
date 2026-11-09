@@ -88,6 +88,7 @@ func Handler() http.Handler {
 					dest := string(link.Destination)
 					parts := strings.SplitN(dest, "#", 2)
 					target := strings.TrimPrefix(parts[0], "../")
+					target = strings.TrimPrefix(target, "providers/")
 					target = strings.TrimSuffix(target, ".md")
 					if _, ok := guideNames[target]; ok {
 						dest = "/guides/" + target

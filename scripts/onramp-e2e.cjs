@@ -15,7 +15,7 @@ const fs = require("node:fs");
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       for (const provider of ["moonpay", "alchemypay", "transak", "ramp"]) {
-        await page.goto(base + "/onramp");
+        await page.goto(base + `/onramp?provider=${provider}`);
         await page.waitForFunction(() =>
           document.querySelector("#status").textContent.includes("第一笔"),
         );
@@ -26,7 +26,12 @@ const fs = require("node:fs");
           true,
           "page overflow",
         );
-        await page.locator(`[data-provider=${provider}]`).click();
+        assert.equal(
+          await page
+            .locator(`[data-provider=${provider}]`)
+            .getAttribute("aria-pressed"),
+          "true",
+        );
         const guide = await context.request.get(base + "/guides/" + provider);
         assert.equal(guide.status(), 200);
         assert.match(await guide.text(), /第1步/);
@@ -73,6 +78,27 @@ const fs = require("node:fs");
       );
       await page.screenshot({
         path: `test-results/onramp-${device}-home.png`,
+        fullPage: true,
+      });
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await page.goto(base + "/guides/");
+      await page.getByRole("link", { name: "Stripe ↗", exact: true }).click();
+      await page.waitForURL("**/guides/stripe");
+      await page.locator(".copy").first().click();
+      await page.waitForFunction(() =>
+        document.querySelector("#copy-status").textContent.includes("已复制"),
+      );
+      assert.ok(await page.evaluate(() => navigator.clipboard.readText()));
+      assert.ok(await page.locator("#toc a").count());
+      assert.equal(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+        "guide overflow",
+      );
+      await page.screenshot({
+        path: `test-results/guide-${device}.png`,
         fullPage: true,
       });
       assert.deepEqual(errors, []);

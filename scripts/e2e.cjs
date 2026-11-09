@@ -15,7 +15,10 @@ const fs = require("node:fs");
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       for (const gateway of ["stripe", "allscale"]) {
-        await page.goto(process.env.PAY_BASE_URL || "http://127.0.0.1:8098");
+        await page.goto(
+          (process.env.PAY_BASE_URL || "http://127.0.0.1:8098") +
+            `/?gateway=${gateway}`,
+        );
         await page.waitForFunction(
           () => document.querySelector("#balance").textContent !== "—",
         );
@@ -29,7 +32,11 @@ const fs = require("node:fs");
           true,
           "horizontal overflow",
         );
-        await page.locator(`[name=gateway][value=${gateway}]`).check();
+        assert.equal(await page.locator(".provider-card").count(), 6);
+        assert.equal(
+          await page.locator(`[name=gateway][value=${gateway}]`).isChecked(),
+          true,
+        );
         await page.locator("#checkout").click();
         await page.waitForURL("**/demo/checkout?order_id=*");
         await page.locator("[data-outcome=succeeded]").click();

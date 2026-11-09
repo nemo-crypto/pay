@@ -161,7 +161,7 @@ Allscale公开币种表未列TWD，本项目按固定服务端汇率将TWD意图
 | [Transak完整教程](docs/providers/transak.md) | Token缓存、Session、JWT、真实用户IP和引用绑定 |
 | [Ramp完整教程](docs/providers/ramp.md) | ECDSA、资产精度、view token和回调关联 |
 
-教程内嵌到Go二进制，本地 `/guides/` 是总入口，`/guides/stripe` 等可以离线查看。更多参考前端接入说明见 [接入与运维](docs/integration.md)，买币公共接口见 [买币API说明](docs/providers/onramp-api.md)。
+首页提供六通道统一入口，每家均可直接进入演示或教程。教程内嵌到Go二进制，本地 `/guides/` 是总入口，`/guides/stripe` 等提供可离线阅读的页面，含目录、代码复制和手机端表格滚动。追加 `?format=raw` 或 `.md` 可取得 Markdown 原文。更多参考前端接入说明见 [接入与运维](docs/integration.md)，买币公共接口见 [买币API说明](docs/providers/onramp-api.md)。
 
 真实模式要求公网HTTPS、商户准入、对应凭据与回调/域名/IP白名单。配置`PAY_MODE=live`才访问真实API；四家买币另通过`ONRAMP_ENV=sandbox|production`选择环境。`ONRAMP_PROVIDERS`默认空，按需显式启用，不会回退mock。原应用JWT需对齐密钥、issuer、audience或替换认证适配器。
 
@@ -196,3 +196,11 @@ docs/providers   六家逐步教程，随二进制内嵌
 提供Dockerfile及Go CI。测试与验证记录见 [validation.md](docs/validation.md)。本实现不包含消费扣点、通用退款发起、出款、拒付处理或原应用的营销分成；商户真实联调与生产验收仍须逐家完成。
 
 关键词：Golang payment gateway, Stripe Checkout, Allscale, MoonPay, Alchemy Pay, Transak, Ramp Network, fiat on-ramp, USDT, USDC, webhook verification, ECDSA, idempotency, SQLite ledger.
+
+### 回调重试与异常排查
+
+四家买币通道的通知先验签、持久化，再由 Worker 应用状态。建单响应超时不会覆盖已经确认的资产交付。临时处理失败按30秒、60秒逐步退避，最长每小时重试一次；损坏数据、订单不存在或供应商引用冲突进入隔离队列，避免阻塞后续付款。已有 SQLite 启动时自动补充重试字段，保留原事件。
+
+管理员通过 `/admin/onramp/reconciliation` 查看 `unprocessed_events`、`deferred_events`、`dead_letter_events`。隔离项需要人工核对订单、供应商查询结果和脱敏错误原因；本 demo 没有自动解除隔离或管理端重放接口。先备份数据库，修复根因后由运维审核处理，切勿直接改订单为已交付。
+
+买币接口的业务错误返回 `code`、`message`、`retriable`、`trace_id`：参数错误400、冲突409、供应商暂时不可用503。可重试错误包含 `Retry-After`；创建请求重试应复用原 `Idempotency-Key`，避免创建新的购买意图。`trace_id` 为响应定位标识，尚未关联完整追踪系统。
