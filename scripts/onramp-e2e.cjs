@@ -82,7 +82,7 @@ const fs = require("node:fs");
       });
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
       await page.goto(base + "/guides/");
-      await page.getByRole("link", { name: "Stripe ↗", exact: true }).click();
+      await page.locator('.providers a[href="/guides/stripe"]').click();
       await page.waitForURL("**/guides/stripe");
       await page.locator(".copy").first().click();
       await page.waitForFunction(() =>

@@ -61,3 +61,22 @@ Content-Type: application/json
 ## 六家教程入口
 
 统一总览与启动步骤见根目录README；Stripe、Allscale、MoonPay、Alchemy Pay、Transak、Ramp各自逐步教程见 [教程目录](providers/README.md)。四家买币接口与储值接口共用Go服务，但买币交付不直接修改平台点数。
+
+## 买币事件重试与旧数据库升级
+
+启动时自动为 `onramp_events` 增加 `attempts`、`next_attempt`、`last_error`、`dead_letter`，并建立待处理索引。迁移在事务中执行，重复启动安全，原有事件保留；升级前仍应按上述方式备份 SQLite。
+
+每次 Worker 最多读取100个到期事件。临时失败从30秒开始指数退避，封顶1小时；永久关联冲突、缺失订单或损坏数据进入隔离队列。管理员统计中的 `unprocessed_events` 包括延迟和隔离项，`deferred_events` 仅统计等待重试项，`dead_letter_events` 统计隔离项。已确认的付款不会因建单网络超时被回退为未知状态。
+
+排查时可只读查看事件元信息，不应输出完整通知、钱包或供应商凭据：
+
+```sql
+SELECT provider, event_id, order_id, attempts, next_attempt, last_error
+FROM onramp_events
+WHERE processed = 0 AND dead_letter = 1
+ORDER BY created LIMIT 50;
+```
+
+先核对供应商查询与本地购买意图，确认冲突原因。已有订单可以通过查询接口同步验证结果；损坏事件保留审计，项目当前没有管理端重放或解除隔离接口，不建议直接修改订单状态。
+
+离线教程现以 HTML 渲染：`/guides/`，支持目录、代码复制、移动端表格滚动；原 Markdown 用 `?format=raw` 或 `.md` 后缀访问。

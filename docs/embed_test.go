@@ -17,7 +17,7 @@ func TestOfflineGuidesAndRawCompatibility(t *testing.T) {
 			if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(body, "<h1") || !strings.Contains(body, "<pre><code") {
 				t.Fatalf("guide %s not rendered: %d", name, w.Code)
 			}
-			if strings.Contains(body, `href="stripe.md"`) || strings.Contains(body, `href="../integration.md"`) {
+			if strings.Contains(body, `href="stripe.md"`) || strings.Contains(body, `href="../integration.md"`) || strings.Contains(body, `href="providers/README.md"`) {
 				t.Fatal("unresolved local link")
 			}
 			raw := httptest.NewRecorder()
