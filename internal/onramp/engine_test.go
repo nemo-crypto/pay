@@ -274,3 +274,59 @@ func TestExpiredCheckoutIsNotReopened(t *testing.T) {
 		t.Fatal(v, err)
 	}
 }
+
+func TestFailureAndCancellationDoNotDeliver(t *testing.T) {
+	for _, name := range Names {
+		for _, action := range []string{"fail", "cancel"} {
+			t.Run(name+"/"+action, func(t *testing.T) {
+				e := fixture(t)
+				o := order(t, e, name)
+				v, err := e.Advance(context.Background(), "alice", o.ID, action, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if v.Status != "failed" && v.Status != "cancelled" {
+					t.Fatal(v)
+				}
+				if v.CryptoAmount != "" || v.TxHash != "" {
+					t.Fatal("failure delivered assets")
+				}
+				if _, err = e.Advance(context.Background(), "alice", o.ID, "deliver", true); err != ErrConflict {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+func TestRampShortAssetCodeRequiresEthereumContract(t *testing.T) {
+	o := Order{ID: "test", Provider: "ramp", Wallet: "0x1111111111111111111111111111111111111111", FiatMinor: 3000}
+	raw, _ := json.Marshal(mockPayload(o, "completed"))
+	m, _ := jsonMap(raw)
+	s, err := normalize("ramp", m)
+	if err != nil || s.Network != "ethereum" || s.Asset != "USDC" {
+		t.Fatal(s, err)
+	}
+	asset := object(m, "asset")
+	asset["address"] = "0x2222222222222222222222222222222222222222"
+	s, err = normalize("ramp", m)
+	if err == nil && s.Network == "ethereum" {
+		t.Fatal("unknown token contract treated as Ethereum USDC")
+	}
+}
+func TestSameProviderPurchaseCannotBindTwoOrders(t *testing.T) {
+	e := fixture(t)
+	o := order(t, e, "ramp")
+	other, err := e.Create(context.Background(), "alice", "second-ramp-purchase", "127.0.0.1", Input{"ramp", o.Wallet, 3000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, _ := e.DB.Begin()
+	other.Ref = ""
+	if err = put(context.Background(), tx, other); err != nil {
+		t.Fatal(err)
+	}
+	tx.Commit()
+	if _, err = e.Bind(context.Background(), "alice", other.ID, o.Ref, "mock-view-token"); err != ErrConflict {
+		t.Fatal("provider purchase reused", err)
+	}
+}

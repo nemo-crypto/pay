@@ -46,6 +46,8 @@ func New(db *sql.DB, mode, public string) (*Engine, error) {
 	}
 	_, e = db.Exec(`CREATE TABLE IF NOT EXISTS onramp_orders(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,provider TEXT NOT NULL,idem TEXT NOT NULL,fingerprint TEXT NOT NULL,ref TEXT,status TEXT NOT NULL,next_check INTEGER NOT NULL,created INTEGER NOT NULL,data TEXT NOT NULL,UNIQUE(user_id,idem),UNIQUE(provider,ref));
  CREATE TABLE IF NOT EXISTS onramp_events(provider TEXT NOT NULL,event_id TEXT NOT NULL,order_id TEXT NOT NULL,snapshot TEXT NOT NULL,processed INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL,PRIMARY KEY(provider,event_id));
+ CREATE INDEX IF NOT EXISTS onramp_due ON onramp_orders(status,next_check);
+ CREATE INDEX IF NOT EXISTS onramp_inbox_due ON onramp_events(processed,created);
  CREATE TABLE IF NOT EXISTS onramp_tokens(provider TEXT PRIMARY KEY,token TEXT NOT NULL,previous TEXT NOT NULL,expires INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS onramp_mock(id TEXT PRIMARY KEY,provider TEXT NOT NULL,payload TEXT NOT NULL);`)
 	if e != nil {
@@ -269,12 +271,15 @@ func (e *Engine) apply(ctx context.Context, id string, s Snapshot, eventID strin
 			return err
 		}
 		o.Ref = s.Ref
+		if o.Status == "review" && o.Detail == "checkout_creation_unknown" {
+			o.Status = "pending"
+		}
 		if s.ViewToken != "" {
 			o.ViewToken = s.ViewToken
 		}
 		if o.Status != "refunded" && o.Status != "review" {
 			if o.Status != "completed" || s.Status == "refunded" {
-				if !(o.Status == "processing" && s.Status == "pending") && !(o.Status == "failed" && s.Status == "pending") && !(o.Status == "cancelled" && s.Status == "pending") {
+				if !(o.Status == "processing" && s.Status == "pending") && !(o.Status == "failed" && (s.Status == "pending" || s.Status == "processing")) && !(o.Status == "cancelled" && (s.Status == "pending" || s.Status == "processing")) {
 					o.Status = s.Status
 					o.Detail = "provider_confirmed"
 				}
@@ -474,4 +479,16 @@ func (e *Engine) Advance(ctx context.Context, user, id, action string, deliver b
 		e.Tick(ctx)
 	}
 	return e.Get(ctx, user, id)
+}
+
+func (e *Engine) Health(ctx context.Context) (map[string]int64, error) {
+	result := map[string]int64{}
+	for name, query := range map[string]string{"unprocessed_events": "SELECT COUNT(*) FROM onramp_events WHERE processed=0", "review_orders": "SELECT COUNT(*) FROM onramp_orders WHERE status='review'", "awaiting_provider_reference": "SELECT COUNT(*) FROM onramp_orders WHERE ref IS NULL", "stale_pending": "SELECT COUNT(*) FROM onramp_orders WHERE status IN ('pending','processing') AND created < strftime('%s','now')-604800"} {
+		var n int64
+		if err := e.DB.QueryRowContext(ctx, query).Scan(&n); err != nil {
+			return nil, err
+		}
+		result[name] = n
+	}
+	return result, nil
 }

@@ -111,7 +111,7 @@ func mockPayload(o Order, status string) map[string]any {
 		return map[string]any{"id": ref, "partnerOrderId": o.ID, "walletAddress": o.Wallet, "fiatCurrency": "USD", "cryptoCurrency": "USDC", "network": "ethereum", "fiatAmount": json.Number(dollars(o.FiatMinor)), "cryptoAmount": json.Number(crypto), "transactionHash": tx, "status": st}
 	case "ramp":
 		st := map[string]string{"pending": "INITIALIZED", "processing": "RELEASING", "completed": "RELEASED", "failed": "EXPIRED", "cancelled": "CANCELLED", "refunded": "RETURNED"}[status]
-		return map[string]any{"id": ref, "receiverAddress": o.Wallet, "fiatCurrency": "USD", "fiatValue": json.Number(dollars(o.FiatMinor)), "asset": map[string]any{"symbol": "ETH_USDC", "decimals": 6}, "cryptoAmount": strconv.FormatInt((o.FiatMinor-100)*10000, 10), "finalTxHash": tx, "purchaseViewToken": "mock-view-token", "status": st}
+		return map[string]any{"id": ref, "receiverAddress": o.Wallet, "fiatCurrency": "USD", "fiatValue": json.Number(dollars(o.FiatMinor)), "asset": map[string]any{"symbol": "USDC", "decimals": 6, "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"}, "cryptoAmount": strconv.FormatInt((o.FiatMinor-100)*10000, 10), "finalTxHash": tx, "purchaseViewToken": "mock-view-token", "status": st}
 	}
 	return nil
 }

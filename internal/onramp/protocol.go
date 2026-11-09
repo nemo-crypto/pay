@@ -258,7 +258,7 @@ func normalize(name string, m map[string]any) (Snapshot, error) {
 		s.Fiat = str(m, "fiatCurrency")
 		s.Asset = str(object(m, "asset"), "symbol")
 		s.Network = "ethereum"
-		if s.Asset == "ETH_USDC" {
+		if s.Asset == "ETH_USDC" || (s.Asset == "USDC" && strings.EqualFold(str(object(m, "asset"), "address"), "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")) {
 			s.Asset = "USDC"
 		} else {
 			s.Network = "unknown"

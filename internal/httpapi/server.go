@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nemo-crypto/pay/docs"
 	"github.com/nemo-crypto/pay/internal/auth"
 	"github.com/nemo-crypto/pay/internal/onramp"
 	"github.com/nemo-crypto/pay/internal/payment"
@@ -197,9 +198,18 @@ func (a *API) Handler(static http.Handler) http.Handler {
 		m.HandleFunc("POST /demo/orders/{id}/pay", a.secure(false, a.demoPay))
 	}
 	if a.Onramp != nil {
+		m.HandleFunc("GET /admin/onramp/reconciliation", a.secure(true, func(w http.ResponseWriter, r *http.Request, c *auth.Claims) {
+			v, e := a.Onramp.Health(r.Context())
+			if e != nil {
+				fail(w, e)
+				return
+			}
+			write(w, 200, v)
+		}))
 		m.Handle("/onramp/", a.Onramp.Handler(a.Auth, static))
 		m.Handle("GET /onramp", static)
 	}
+	m.Handle("/guides/", docs.Handler())
 	m.Handle("/", static)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")

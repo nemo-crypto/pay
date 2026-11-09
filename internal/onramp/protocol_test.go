@@ -127,3 +127,22 @@ func TestAlchemyAPIQuerySignatureUsesSortedRawValues(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestTransakTokenCacheSurvivesRestart(t *testing.T) {
+	e := fixture(t)
+	t.Setenv("ONRAMP_PROVIDERS", "transak")
+	t.Setenv("ONRAMP_ENV", "sandbox")
+	t.Setenv("TRANSAK_API_KEY", "test-key")
+	t.Setenv("TRANSAK_API_SECRET", "test-secret")
+	if _, err := e.DB.Exec("INSERT INTO onramp_tokens VALUES(?,?,?,?)", "transak", "cached-sensitive-token", "previous-sensitive-token", time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := New(e.DB, "live", "https://merchant.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := restored.Adapters["transak"].accessToken(context.Background())
+	if err != nil || token != "cached-sensitive-token" {
+		t.Fatal("cache restoration failed")
+	}
+}
