@@ -14,3 +14,29 @@ jobs:
       - run: go test -race ./...
       - run: go vet ./...
       - run: go build ./cmd/server ./cmd/token
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build and start local mock server
+        run: |
+          go build -o /tmp/pay-demo ./cmd/server
+          HTTP_ADDR=127.0.0.1:8098 PUBLIC_URL=http://127.0.0.1:8098 DATABASE_PATH=/tmp/pay-ci.db /tmp/pay-demo > /tmp/pay-ci.log 2>&1 &
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8098/healthz; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/pay-ci.log
+          exit 1
+      - run: npm run test:e2e
+      - run: npm run test:onramp

@@ -88,3 +88,5 @@ Webhook 通过签名校验后先写 `onramp_events`，返回成功，Worker 每3
 必须核验商户测试实际返回的状态、资产代码及 webhook 字段。未知状态或字段缺失默认拒绝完成。订单进入review后，应先查供应商后台、API和链上结果，再做有审计的人工处置；不能改状态让它“看起来成功”。
 
 浏览器回归 `npm run test:onramp`，后端回归 `go test -race ./internal/onramp`。截图和结果见项目验证记录。
+
+管理员可通过 `GET /admin/onramp/reconciliation` 检查未处理事件、review订单、缺少供应商引用和超过7天未完成的订单数量。

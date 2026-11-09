@@ -57,3 +57,7 @@ Content-Type: application/json
 `make build` 后直接运行二进制，网页已内嵌。设置 `PAY_MODE=live` 和 HTTPS 公网地址，进程监听内部地址，TLS 在反向代理终止。数据库目录必须持久化且只允许服务用户访问。Dockerfile 提供非 root 运行的构建示例，`/data` 必须挂载持久卷；镜像默认 live，需要传完整环境变量。Docker 构建未作为真实部署验收。
 
 上线前在各商户环境完成低额端到端验收、丢回调恢复和退款验证，再决定开放业务流量。当前测试与演示没有连接真实支付网关或发起真实扣款。
+
+## 六家教程入口
+
+统一总览与启动步骤见根目录README；Stripe、Allscale、MoonPay、Alchemy Pay、Transak、Ramp各自逐步教程见 [教程目录](providers/README.md)。四家买币接口与储值接口共用Go服务，但买币交付不直接修改平台点数。
