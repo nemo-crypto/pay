@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-//go:embed index.html app.js style.css
+//go:embed index.html app.js style.css onramp.html onramp.js
 var files embed.FS
 
 func Handler() http.Handler {
@@ -18,7 +18,12 @@ func Handler() http.Handler {
 		file := "index.html"
 		kind := "text/html; charset=utf-8"
 		switch path {
-		case "/app.js":
+		case "/onramp", "/onramp/checkout":
+ file = "onramp.html"
+ case "/onramp.js":
+ file = "onramp.js"
+ kind = "text/javascript; charset=utf-8"
+ case "/app.js":
 			file = "app.js"
 			kind = "text/javascript; charset=utf-8"
 		case "/style.css":

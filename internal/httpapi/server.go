@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nemo-crypto/pay/internal/auth"
+"github.com/nemo-crypto/pay/internal/onramp"
 	"github.com/nemo-crypto/pay/internal/payment"
 	"github.com/nemo-crypto/pay/internal/service"
 	"github.com/nemo-crypto/pay/internal/store"
@@ -23,6 +24,7 @@ import (
 
 type API struct {
 	Service *service.Service
+ Onramp *onramp.Engine
 	Auth    auth.Auth
 	mu      sync.Mutex
 	limits  map[string]bucket
@@ -194,7 +196,8 @@ func (a *API) Handler(static http.Handler) http.Handler {
 		})
 		m.HandleFunc("POST /demo/orders/{id}/pay", a.secure(false, a.demoPay))
 	}
-	m.Handle("/", static)
+	if a.Onramp != nil { m.Handle("/onramp/", a.Onramp.Handler(a.Auth,static)); m.Handle("GET /onramp",static) }
+ m.Handle("/", static)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nemo-crypto/pay/internal/config"
+"github.com/nemo-crypto/pay/internal/onramp"
 	"github.com/nemo-crypto/pay/internal/httpapi"
 	"github.com/nemo-crypto/pay/internal/payment"
 	"github.com/nemo-crypto/pay/internal/service"
@@ -59,7 +60,10 @@ func run() error {
 		}
 	}
 	svc := &service.Service{Store: db, Providers: providers, Config: cfg}
-	api := httpapi.New(svc)
+	ramps, e := onramp.New(db.DB, cfg.Mode, cfg.PublicURL)
+ if e != nil { return e }
+ api := httpapi.New(svc)
+ api.Onramp = ramps
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	done := make(chan struct{})
@@ -68,12 +72,14 @@ func run() error {
 		ticker := time.NewTicker(cfg.Interval)
 		defer ticker.Stop()
 		svc.Tick(ctx)
+ ramps.Tick(ctx)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				svc.Tick(ctx)
+ ramps.Tick(ctx)
 			}
 		}
 	}()
