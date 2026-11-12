@@ -45,9 +45,11 @@ func Open(path string) (*Store, error) {
  CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),gateway TEXT NOT NULL,ref TEXT,payment_intent TEXT,status TEXT NOT NULL,nt_amount INTEGER NOT NULL,created INTEGER NOT NULL,next_check INTEGER NOT NULL,reuse_hash TEXT NOT NULL,abandoned INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL,data TEXT NOT NULL, UNIQUE(gateway,ref));
  CREATE INDEX IF NOT EXISTS order_user ON orders(user_id,created);
  CREATE INDEX IF NOT EXISTS order_ref ON orders(gateway,payment_intent);
+ CREATE INDEX IF NOT EXISTS order_due ON orders(next_check,created) WHERE status='pending' OR (ref IS NOT NULL AND status IN ('failed','expired'));
  CREATE TABLE IF NOT EXISTS requests(user_id TEXT NOT NULL,key TEXT NOT NULL,hash TEXT NOT NULL,order_id TEXT NOT NULL REFERENCES orders(id),PRIMARY KEY(user_id,key));
  CREATE TABLE IF NOT EXISTS ledger(id TEXT PRIMARY KEY,order_id TEXT NOT NULL REFERENCES orders(id),user_id TEXT NOT NULL,kind TEXT NOT NULL,delta INTEGER NOT NULL,created INTEGER NOT NULL,UNIQUE(order_id,kind));
- CREATE TABLE IF NOT EXISTS inbox(gateway TEXT NOT NULL,id TEXT NOT NULL,nonce TEXT,body_hash TEXT NOT NULL,snapshot TEXT NOT NULL,processed INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,PRIMARY KEY(gateway,id),UNIQUE(gateway,nonce));`
+ CREATE TABLE IF NOT EXISTS inbox(gateway TEXT NOT NULL,id TEXT NOT NULL,nonce TEXT,body_hash TEXT NOT NULL,snapshot TEXT NOT NULL,processed INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,PRIMARY KEY(gateway,id),UNIQUE(gateway,nonce));
+ CREATE INDEX IF NOT EXISTS inbox_pending ON inbox(created,next_attempt) WHERE processed=0;`
 	if _, e = db.Exec(schema); e != nil {
 		db.Close()
 		return nil, e

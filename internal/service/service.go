@@ -60,6 +60,9 @@ func bad(code, msg string) *Error { return &Error{Code: code, Message: msg, HTTP
 var decimal = regexp.MustCompile(`^[0-9]+(\.[0-9]{1,8})?$`)
 
 func Quote(nt int64, rate string) (int64, error) {
+	if nt <= 0 {
+		return 0, fmt.Errorf("invalid NT amount")
+	}
 	if !decimal.MatchString(rate) {
 		return 0, fmt.Errorf("invalid fixed FX quote")
 	}
@@ -67,7 +70,8 @@ func Quote(nt int64, rate string) (int64, error) {
 	if !ok || r.Sign() <= 0 {
 		return 0, fmt.Errorf("invalid FX rate")
 	}
-	v := new(big.Rat).Quo(new(big.Rat).SetInt64(nt*100), r)
+	minor := new(big.Int).Mul(big.NewInt(nt), big.NewInt(100))
+	v := new(big.Rat).Quo(new(big.Rat).SetInt(minor), r)
 	q, rem := new(big.Int), new(big.Int)
 	q.QuoRem(v.Num(), v.Denom(), rem)
 	if rem.Sign() > 0 {

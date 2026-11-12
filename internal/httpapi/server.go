@@ -98,9 +98,9 @@ func (a *API) secure(admin bool, fn func(http.ResponseWriter, *http.Request, *au
 			fail(w, &service.Error{Code: "FORBIDDEN", Message: "需要管理员权限", HTTP: 403})
 			return
 		}
-		key, max := c.Subject, 180
+		key, max := "read:"+c.Subject, 180
 		if r.Method == "POST" {
-			key += "-write"
+			key = "write:" + c.Subject
 			max = 10
 		}
 		if !a.limit(key, max) {

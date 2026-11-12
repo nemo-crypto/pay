@@ -67,6 +67,35 @@ func (f fixture) call(method, path, body, key string) *httptest.ResponseRecorder
 	f.handler.ServeHTTP(w, r)
 	return w
 }
+
+func TestReadAndWriteLimitsAreIsolatedByUser(t *testing.T) {
+	f := setup(t)
+	other := f
+	var err error
+	other.token, err = f.api.Auth.Token("alice-write", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10; i++ {
+		if w := other.call("GET", "/me", "", ""); w.Code != http.StatusOK {
+			t.Fatalf("other user read: %d %s", w.Code, w.Body.String())
+		}
+	}
+	for i := 0; i < 10; i++ {
+		w := f.call("POST", "/topups", `{"plan_id":"p1","gateway":"stripe"}`, "isolated-purchase")
+		if w.Code != http.StatusCreated {
+			t.Fatalf("write %d: %d %s", i, w.Code, w.Body.String())
+		}
+	}
+	if w := f.call("POST", "/topups", `{"plan_id":"p1"}`, "isolated-purchase"); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("write limit: got %d, want 429", w.Code)
+	}
+	for _, user := range []fixture{f, other} {
+		if w := user.call("GET", "/me", "", ""); w.Code != http.StatusOK {
+			t.Fatalf("read after write limit: got %d, want 200", w.Code)
+		}
+	}
+}
 func create(t *testing.T, f fixture, gateway, key string) payment.Order {
 	t.Helper()
 	w := f.call("POST", "/topups", `{"plan_id":"p1","gateway":"`+gateway+`"}`, key)

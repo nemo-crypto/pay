@@ -1,5 +1,20 @@
 # 验证记录
 
+## 金额边界、限流隔离与对账索引（2026-11-12）
+
+- 汇率报价在高精度整数中完成元到分的乘法，避免 `int64` 溢出；覆盖正负溢出输入、最大输出边界及大金额合法报价，保留向上取整规则。
+- 限流键按读写前缀区分用户，覆盖 `alice` 写请求与 `alice-write` 读请求的历史碰撞场景，并确认写额度耗尽后仍可读取。
+- 储值对账订单及未处理回调新增部分索引。旧库重新打开后账户余额和回调仍保留；`EXPLAIN QUERY PLAN` 确认两类查询使用新索引且无需临时排序。大库首次启动需留出创建索引的时间；尚未进行大数据量吞吐压测。
+- 使用 `GOCACHE=/tmp/chovy-pay-go-cache`，`go vet ./...`、`go build ./cmd/server ./cmd/token` 和 `git diff --check` 通过。
+- 完整 `go test -race ./...` 受当前沙箱禁止绑定本地端口限制，HTTP mock 服务启动报 `bind: operation not permitted`。以下命令跳过4个需要监听端口的现有测试后，所有包通过：
+
+```sh
+GOCACHE=/tmp/chovy-pay-go-cache go test -race ./... \
+  -skip '^(TestStripeCreateFieldsAndIdempotency|TestAllscaleProtocol|TestAllscaleRejectsUnsignedResponseWhenRequired|TestTransakTokenCacheAndSessionAPI)$'
+```
+
+本轮未运行浏览器回归或真实网关交易。chovy 下24个仓库均尝试执行 `git pull --ff-only`，但因无法解析 `github.com` 全部失败；上述修改基于现有本地版本，需在网络可用后同步远端，并在允许本地监听端口的环境补跑完整测试。
+
 日期：2026-11-09。环境：macOS、Go 1.25.11、Playwright 1.58.2 Chromium。
 
 - `go test -race ./...`：通过，包含 HTTP 业务、认证、配置、支付协议和报价测试。
