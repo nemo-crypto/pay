@@ -1,4 +1,4 @@
-# Pay Lab — Go 六通道支付接入与全流程教学
+# Pay Lab — Go 六通道支付接入与全流程教学 
 
 一个 Go + SQLite 支付实验室，统一介绍 **Stripe、Allscale、MoonPay、Alchemy Pay、Transak、Ramp** 六种接入方式。从创建订单、打开收银台、身份/付款验证，到 Webhook 验签、状态查询、到账确认与异常恢复，都提供代码、mock演示和逐步教程。
 
