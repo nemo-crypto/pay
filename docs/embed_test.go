@@ -9,7 +9,7 @@ import (
 
 func TestOfflineGuidesAndRawCompatibility(t *testing.T) {
 	h := Handler()
-	for _, name := range []string{"", "stripe", "allscale", "moonpay", "alchemypay", "transak", "ramp", "onramp-api", "integration"} {
+	for _, name := range []string{"", "wechat", "stripe", "allscale", "moonpay", "alchemypay", "transak", "ramp", "onramp-api", "integration"} {
 		t.Run(name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, httptest.NewRequest("GET", "/guides/"+name, nil))

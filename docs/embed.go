@@ -28,7 +28,7 @@ type guidePage struct {
 	Content       template.HTML
 }
 
-var guideNames = map[string]string{"stripe": "Stripe", "allscale": "Allscale", "moonpay": "MoonPay", "alchemypay": "Alchemy Pay", "transak": "Transak", "ramp": "Ramp", "onramp-api": "买币 API 说明", "integration": "接入与运维", "README": "六通道教程总览"}
+var guideNames = map[string]string{"wechat": "微信支付", "stripe": "Stripe", "allscale": "Allscale", "moonpay": "MoonPay", "alchemypay": "Alchemy Pay", "transak": "Transak", "ramp": "Ramp", "onramp-api": "买币 API 说明", "integration": "接入与运维", "README": "支付教程总览"}
 
 // Handler 将内嵌 Markdown 渲染为离线阅读页；?format=raw 保留可复制的原文接口。
 func Handler() http.Handler {
@@ -110,7 +110,7 @@ func Handler() http.Handler {
 			return
 		}
 		links := []guideLink{}
-		for _, id := range []string{"stripe", "allscale", "moonpay", "alchemypay", "transak", "ramp"} {
+		for _, id := range []string{"wechat", "stripe", "allscale", "moonpay", "alchemypay", "transak", "ramp"} {
 			links = append(links, guideLink{guideNames[id], "/guides/" + id, id == name})
 		}
 		var page bytes.Buffer

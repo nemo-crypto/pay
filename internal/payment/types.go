@@ -10,9 +10,12 @@ import (
 )
 
 type Checkout struct {
-	Mode         string `json:"mode"`
-	URL          string `json:"url,omitempty"`
-	ClientSecret string `json:"client_secret,omitempty"`
+	Mode         string           `json:"mode"`
+	URL          string           `json:"url,omitempty"`
+	ClientSecret string           `json:"client_secret,omitempty"`
+	CodeURL      string           `json:"code_url,omitempty"`
+	Wechat       *WechatPayParams `json:"wechat,omitempty"`
+	ExpiresAt    *time.Time       `json:"expires_at,omitempty"`
 }
 type Crypto struct {
 	ChainID     int64  `json:"chain_id"`
@@ -26,6 +29,10 @@ type Order struct {
 	PlanID           string    `json:"plan_id"`
 	Kind             string    `json:"topup_kind"`
 	Gateway          string    `json:"gateway"`
+	WechatScene      string    `json:"wechat_scene,omitempty"`
+	WechatAppID      string    `json:"-"`
+	WechatOpenID     string    `json:"-"`
+	ClientIP         string    `json:"-"`
 	NTAmount         int64     `json:"nt_amount"`
 	Coins            int64     `json:"coin_amount"`
 	Credited         int64     `json:"coins_credited"`
@@ -68,6 +75,8 @@ type Snapshot struct {
 	Currency        string  `json:"currency"`
 	Amount          int64   `json:"amount"`
 	Crypto          *Crypto `json:"crypto,omitempty"`
+	WechatAppID     string  `json:"wechat_app_id,omitempty"`
+	WechatOpenID    string  `json:"wechat_open_id,omitempty"`
 }
 type Event struct {
 	ID       string

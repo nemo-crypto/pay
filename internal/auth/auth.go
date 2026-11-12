@@ -8,14 +8,20 @@ import (
 )
 
 type Claims struct {
-	Role  string `json:"role"`
-	Guest bool   `json:"guest"`
+	Role          string            `json:"role"`
+	Guest         bool              `json:"guest"`
+	WechatOpenIDs map[string]string `json:"wechat_openids,omitempty"`
 	jwt.RegisteredClaims
 }
 type Auth struct{ Secret, Issuer, Audience string }
 
 func (a Auth) Token(user, role string) (string, error) {
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{Role: role, RegisteredClaims: jwt.RegisteredClaims{Subject: user, Issuer: a.Issuer, Audience: jwt.ClaimStrings{a.Audience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)), IssuedAt: jwt.NewNumericDate(time.Now())}}).SignedString([]byte(a.Secret))
+	return a.TokenWithWechat(user, role, nil)
+}
+
+// TokenWithWechat 只供受信任登录服务使用；OpenID 必须来自微信服务端登录交换。
+func (a Auth) TokenWithWechat(user, role string, openids map[string]string) (string, error) {
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{Role: role, WechatOpenIDs: openids, RegisteredClaims: jwt.RegisteredClaims{Subject: user, Issuer: a.Issuer, Audience: jwt.ClaimStrings{a.Audience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)), IssuedAt: jwt.NewNumericDate(time.Now())}}).SignedString([]byte(a.Secret))
 }
 func (a Auth) Parse(header string) (*Claims, error) {
 	if !strings.HasPrefix(header, "Bearer ") {

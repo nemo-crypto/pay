@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Pay Lab · 六通道支付实验室</title>
+    <title>Pay Lab · 支付实验室</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/app.js"></script>
   </head>
@@ -17,9 +17,9 @@
     </header>
     <main>
       <section class="hero">
-        <p class="eyebrow">SIX PROVIDERS. EVERY STEP CONNECTED.</p>
+        <p class="eyebrow">PAYMENT PROVIDERS. EVERY STEP CONNECTED.</p>
         <h1>从付款，到每一笔到账。</h1>
-        <p>从信用卡储值、稳定币支付到法币买币，六种通道，共用一份入门路线。</p>
+        <p>从微信支付、信用卡储值、稳定币支付到法币买币，共用一份入门路线。</p>
       </section>
       <section id="catalog" aria-labelledby="catalog-title">
         <div class="heading">
@@ -27,6 +27,12 @@
           <a class="subtle" href="/guides/">从零接入 · 完整教程 ↗</a>
         </div>
         <div class="provider-catalog">
+          <article class="provider-card">
+            <span class="eyebrow">平台储值 · 多场景</span>
+            <h3>微信支付</h3>
+            <p>小程序 / 微信内网页 / H5 / PC 扫码 / App</p>
+            <div><a href="/?gateway=wechat#topup">进入演示 →</a><a href="/guides/wechat">接入教程 ↗</a></div>
+          </article>
           <article class="provider-card">
             <span class="eyebrow">平台储值</span>
             <h3>Stripe</h3>
@@ -118,7 +124,29 @@
                 ><small>USDT / USDC · 可用网络和币种以收银台为准</small></span
               ><b>↗</b></label
             >
+            <label class="gateway"><input type="radio" name="gateway" value="wechat" /><span><strong>微信支付</strong><small>人民币付款 · 按场景调起</small></span><b>↗</b></label>
           </fieldset>
+          <section id="wechat-options" hidden>
+            <label for="wechat-scene">微信支付场景</label>
+            <select id="wechat-scene">
+              <option value="native">PC 网页 · Native 扫码</option>
+              <option value="h5">外部手机浏览器 · H5</option>
+              <option value="jsapi">微信内网页 · JSAPI</option>
+              <option value="mini">微信小程序</option>
+              <option value="app">原生 App</option>
+            </select>
+            <p id="wechat-hint" class="subtle"></p>
+            <p id="wechat-quote" role="status"></p>
+          </section>
+          <section id="wechat-checkout" hidden>
+            <h2>完成微信付款</h2>
+            <p id="wechat-action"></p>
+            <canvas id="wechat-qr" hidden role="img" aria-label="微信付款二维码"></canvas>
+            <p id="wechat-expiry" class="subtle"></p>
+            <pre id="wechat-payload" class="scroll"></pre>
+            <button id="wechat-copy" class="secondary">复制付款参数</button>
+            <button id="wechat-invoke" class="primary" hidden>调起微信支付</button>
+          </section>
           <div id="recovery" hidden class="notice">
             <span id="pending-text"></span>
             <div class="actions">
@@ -184,8 +212,7 @@
       </section>
     </main>
     <footer>
-      <a href="/guides/">六通道完整教程</a> · Go · SQLite · Stripe Checkout ·
-      Allscale Checkout
+      <a href="/guides/">支付接入完整教程</a> · Go · SQLite · 微信支付 · Stripe · Allscale
     </footer>
   </body>
 </html>

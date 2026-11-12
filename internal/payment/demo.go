@@ -21,13 +21,37 @@ func (d *Demo) Init() error {
 }
 func (d *Demo) Create(ctx context.Context, o Order) (Session, error) {
 	ref := "demo_" + d.Gateway + "_" + o.ID
+	if d.Gateway == "wechat" {
+		ref = o.ID
+	}
 	snap := Snapshot{Ref: ref, OrderID: o.ID, Status: "pending", Amount: o.ProviderAmount, Currency: o.ProviderCurrency}
+	if d.Gateway == "wechat" {
+		snap.WechatAppID, snap.WechatOpenID = o.WechatAppID, o.WechatOpenID
+	}
 	if d.Gateway == "stripe" {
 		snap.PaymentIntent = "pi_demo_" + o.ID
 	}
 	b, _ := json.Marshal(snap)
 	_, e := d.DB.ExecContext(ctx, "INSERT OR IGNORE INTO demo_payments VALUES(?,?,?)", ref, o.ID, string(b))
-	return Session{ref, Checkout{Mode: "hosted", URL: d.PublicURL + "/demo/checkout?order_id=" + o.ID}}, e
+	checkout := Checkout{Mode: "hosted", URL: d.PublicURL + "/demo/checkout?order_id=" + o.ID}
+	if d.Gateway == "wechat" {
+		checkout.Mode = o.WechatScene
+		if o.WechatScene == "native" {
+			checkout.CodeURL = "weixin://wxpay/bizpayurl?pr=DEMO_" + o.ID
+		}
+		if o.WechatScene == "mini" || o.WechatScene == "jsapi" || o.WechatScene == "app" {
+			w, ok := d.Verifier.(*Wechat)
+			if !ok {
+				return Session{}, fmt.Errorf("missing WeChat demo signer")
+			}
+			var err error
+			checkout.Wechat, err = w.payParams(o, "demo_prepay_"+o.ID)
+			if err != nil {
+				return Session{}, err
+			}
+		}
+	}
+	return Session{ref, checkout}, e
 }
 func (d *Demo) Fetch(ctx context.Context, o Order) (Snapshot, error) {
 	var b string
@@ -53,6 +77,9 @@ func (d *Demo) Set(ctx context.Context, o Order, status string) (Snapshot, error
 		return snap, fmt.Errorf("unsupported demo outcome")
 	}
 	snap.Status = status
+	if d.Gateway == "wechat" && status == "succeeded" {
+		snap.PaymentIntent = "wx_demo_tx_" + o.ID
+	}
 	if status == "pending" {
 		snap.Detail = "confirming_onchain"
 	}

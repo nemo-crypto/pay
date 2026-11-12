@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -143,6 +144,14 @@ func (a *API) Handler(static http.Handler) http.Handler {
 			fail(w, e)
 			return
 		}
+		if in.Gateway == "wechat" {
+			if in.WechatScene == "mini" || in.WechatScene == "jsapi" {
+				in.WechatOpenID = c.WechatOpenIDs[a.Service.Config.Wechat.AppFor(in.WechatScene)]
+			}
+			if in.WechatScene == "h5" {
+				in.ClientIP = a.wechatClientIP(r)
+			}
+		}
 		v, e := a.Service.Create(r.Context(), c.Subject, r.Header.Get("Idempotency-Key"), in)
 		if e != nil {
 			fail(w, e)
@@ -188,7 +197,11 @@ func (a *API) Handler(static http.Handler) http.Handler {
 	m.HandleFunc("POST /admin/orders/{id}/attach", a.secure(true, a.attach))
 	if a.Service.Config.Mode == "demo" {
 		m.HandleFunc("POST /demo/session", func(w http.ResponseWriter, r *http.Request) {
-			token, e := a.Auth.Token("demo-user", "user")
+			ids := map[string]string{}
+			for _, scene := range a.Service.Config.Wechat.Scenes() {
+				ids[a.Service.Config.Wechat.AppFor(scene)] = "demo-openid-" + a.Service.Config.Wechat.AppFor(scene)
+			}
+			token, e := a.Auth.TokenWithWechat("demo-user", "user", ids)
 			if e != nil {
 				fail(w, e)
 				return
@@ -240,7 +253,7 @@ func (a *API) Handler(static http.Handler) http.Handler {
 }
 func (a *API) plans(w http.ResponseWriter, r *http.Request) {
 	g := []string{}
-	for _, name := range []string{"stripe", "allscale"} {
+	for _, name := range []string{"stripe", "allscale", "wechat"} {
 		if a.Service.Providers[name] != nil {
 			g = append(g, name)
 		}
@@ -249,7 +262,7 @@ func (a *API) plans(w http.ResponseWriter, r *http.Request) {
 	if a.Service.Config.Custom {
 		custom = map[string]any{"enabled": true, "min_nt": 51000, "max_nt": 500000, "step_nt": 1000, "coins_per_nt": 2.4, "gateways": g}
 	}
-	write(w, 200, map[string]any{"plans": a.Service.Config.Plans, "custom": custom, "gateways": g, "mode": a.Service.Config.Mode})
+	write(w, 200, map[string]any{"plans": a.Service.Config.Plans, "custom": custom, "gateways": g, "mode": a.Service.Config.Mode, "wechat_scenes": a.Service.Config.Wechat.Scenes(), "wechat_twd_per_cny": a.Service.Config.Wechat.TWDPerCNY})
 }
 func (a *API) list(w http.ResponseWriter, r *http.Request, c *auth.Claims) {
 	status := r.URL.Query().Get("status")
@@ -309,7 +322,7 @@ func (a *API) resume(w http.ResponseWriter, r *http.Request, c *auth.Claims) {
 			return
 		}
 	}
-	resumable := o.Gateway == "stripe" && o.Status == "pending" && !o.Abandoned && time.Now().Before(o.ExpiresAt) && o.Checkout != nil
+	resumable := (o.Gateway == "stripe" || o.Gateway == "wechat") && o.Status == "pending" && !o.Abandoned && time.Now().Before(o.ExpiresAt) && o.Checkout != nil
 	write(w, 200, map[string]any{"resumable": resumable, "order_id": o.ID, "status": o.Status, "gateway": o.Gateway, "plan_id": o.PlanID, "amount_nt": o.NTAmount, "checkout": map[bool]*payment.Checkout{true: o.Checkout, false: nil}[resumable]})
 }
 func (a *API) ingest(ctx context.Context, r *http.Request, b []byte, gateway string) error {
@@ -338,6 +351,10 @@ func (a *API) webhook(w http.ResponseWriter, r *http.Request) {
 	}
 	if e = a.ingest(r.Context(), r, b, r.PathValue("gateway")); e != nil {
 		fail(w, e)
+		return
+	}
+	if r.PathValue("gateway") == "wechat" {
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	write(w, 200, map[string]bool{"received": true})
@@ -411,7 +428,17 @@ func (a *API) demoPay(w http.ResponseWriter, r *http.Request, c *auth.Claims) {
 	if in.Deliver == nil || *in.Deliver {
 		// Allscale 只在成功时发送通知；负面状态由定时查询获得。
 		if o.Gateway == "stripe" || snap.Status == "succeeded" {
-			req, b := a.demoWebhook(o, snap)
+			var req *http.Request
+			var b []byte
+			if o.Gateway == "wechat" {
+				req, b, e = p.WechatNotification(o, snap)
+				if e != nil {
+					fail(w, e)
+					return
+				}
+			} else {
+				req, b = a.demoWebhook(o, snap)
+			}
 			if e = a.ingest(r.Context(), req, b, o.Gateway); e != nil {
 				fail(w, e)
 				return
@@ -460,3 +487,25 @@ func (a *API) demoWebhook(o payment.Order, s payment.Snapshot) (*http.Request, [
 const DemoStripeSecret = "whsec_local_demo_only"
 const DemoAllscaleKey = "local-demo-key"
 const DemoAllscaleSecret = "local-demo-secret"
+
+// 仅信任明确配置的代理覆盖 X-Real-IP；不接受任意客户端伪造的转发头。
+func (a *API) wechatClientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	remote := net.ParseIP(host)
+	if remote == nil {
+		return ""
+	}
+	for _, raw := range a.Service.Config.WechatTrustedProxies {
+		_, cidr, err := net.ParseCIDR(strings.TrimSpace(raw))
+		if err == nil && cidr.Contains(remote) {
+			if ip := net.ParseIP(r.Header.Get("X-Real-IP")); ip != nil {
+				return ip.String()
+			}
+			return ""
+		}
+	}
+	return remote.String()
+}

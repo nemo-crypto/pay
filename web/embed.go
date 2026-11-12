@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-//go:embed index.html app.js style.css onramp.html onramp.js
+//go:embed index.html app.js style.css onramp.html onramp.js vendor/qrcode.mjs
 var files embed.FS
 
 func Handler() http.Handler {
@@ -25,6 +25,9 @@ func Handler() http.Handler {
 			kind = "text/javascript; charset=utf-8"
 		case "/app.js":
 			file = "app.js"
+			kind = "text/javascript; charset=utf-8"
+		case "/vendor/qrcode.mjs":
+			file = "vendor/qrcode.mjs"
 			kind = "text/javascript; charset=utf-8"
 		case "/style.css":
 			file = "style.css"

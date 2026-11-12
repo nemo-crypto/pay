@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test:e2e": "node scripts/e2e.cjs",
-    "test:onramp": "node scripts/onramp-e2e.cjs"
+    "test:onramp": "node scripts/onramp-e2e.cjs",
+    "test:wechat": "node scripts/wechat-e2e.cjs"
   },
   "devDependencies": {
     "playwright": "1.58.2"

@@ -37,6 +37,11 @@ func run() error {
 	defer db.DB.Close()
 	providers := map[string]payment.Provider{}
 	if cfg.Mode == "demo" {
+		wechat, err := payment.NewDemoWechat(db.DB, cfg.PublicURL)
+		if err != nil {
+			return err
+		}
+		providers["wechat"] = wechat
 		for _, g := range []string{"stripe", "allscale"} {
 			var verifier payment.Provider = &payment.Stripe{WebhookSecret: httpapi.DemoStripeSecret}
 			if g == "allscale" {
@@ -49,6 +54,16 @@ func run() error {
 			providers[g] = p
 		}
 	} else {
+		if cfg.Wechat.MchID != "" {
+			if _, err := service.Quote(1000, cfg.Wechat.TWDPerCNY); err != nil {
+				return err
+			}
+			wechat, err := payment.NewWechat(cfg.Wechat, cfg.PublicURL)
+			if err != nil {
+				return err
+			}
+			providers["wechat"] = wechat
+		}
 		if cfg.StripeKey != "" {
 			providers["stripe"] = &payment.Stripe{Key: cfg.StripeKey, WebhookSecret: cfg.StripeWebhookSecret, BaseURL: "https://api.stripe.com", HTTP: payment.Client(), Live: cfg.StripeLive}
 		}

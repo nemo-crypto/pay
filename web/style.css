@@ -14,7 +14,8 @@ body {
   margin: 0;
 }
 button,
-input {
+input,
+select {
   font: inherit;
 }
 button {
@@ -36,6 +37,27 @@ input:focus-visible {
   outline: 3px solid #cf913b;
   outline-offset: 3px;
 }
+#wechat-scene {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 12px;
+  border: 1px solid #ceded7;
+  border-radius: 8px;
+  background: white;
+  color: inherit;
+}
+#wechat-options, #wechat-checkout {
+  margin: 20px 0;
+  min-width: 0;
+}
+#wechat-payload {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.layout > * { min-width: 0; }
+#wechat-qr { max-width: 100%; height: auto !important; }
 a {
   color: inherit;
 }

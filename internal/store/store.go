@@ -61,10 +61,11 @@ type record struct {
 	Order                                                        payment.Order
 	UserID, Ref, PaymentIntent, SuccessURL, CancelURL, ReturnURL string
 	NextCheck                                                    time.Time
+	WechatAppID, WechatOpenID, ClientIP                          string
 }
 
 func encode(o payment.Order) string {
-	b, _ := json.Marshal(record{o, o.UserID, o.Ref, o.PaymentIntent, o.SuccessURL, o.CancelURL, o.ReturnURL, o.NextCheck})
+	b, _ := json.Marshal(record{Order: o, UserID: o.UserID, Ref: o.Ref, PaymentIntent: o.PaymentIntent, SuccessURL: o.SuccessURL, CancelURL: o.CancelURL, ReturnURL: o.ReturnURL, NextCheck: o.NextCheck, WechatAppID: o.WechatAppID, WechatOpenID: o.WechatOpenID, ClientIP: o.ClientIP})
 	return string(b)
 }
 func decode(data string) (payment.Order, error) {
@@ -78,6 +79,7 @@ func decode(data string) (payment.Order, error) {
 	o.CancelURL = r.CancelURL
 	o.ReturnURL = r.ReturnURL
 	o.NextCheck = r.NextCheck
+	o.WechatAppID, o.WechatOpenID, o.ClientIP = r.WechatAppID, r.WechatOpenID, r.ClientIP
 	return o, e
 }
 
@@ -181,7 +183,7 @@ func (s *Store) Reserve(ctx context.Context, o payment.Order, key, hash string, 
 	if sum+o.NTAmount > limit {
 		return o, false, false, false, ErrLimit
 	}
-	if _, e = t.ExecContext(ctx, `INSERT INTO orders(id,user_id,gateway,status,nt_amount,created,next_check,reuse_hash,lease_until,data) VALUES(?,?,?,?,?,?,?,?,?,?)`, o.ID, o.UserID, o.Gateway, o.Status, o.NTAmount, o.CreatedAt.Unix(), time.Now().Add(time.Minute).Unix(), hash, time.Now().Add(time.Minute).Unix(), encode(o)); e != nil {
+	if _, e = t.ExecContext(ctx, `INSERT INTO orders(id,user_id,gateway,status,nt_amount,created,next_check,reuse_hash,lease_until,data,ref) VALUES(?,?,?,?,?,?,?,?,?,?,NULLIF(?,''))`, o.ID, o.UserID, o.Gateway, o.Status, o.NTAmount, o.CreatedAt.Unix(), time.Now().Add(time.Minute).Unix(), hash, time.Now().Add(time.Minute).Unix(), encode(o), o.Ref); e != nil {
 		return o, false, false, false, e
 	}
 	if _, e = t.ExecContext(ctx, "INSERT INTO requests VALUES(?,?,?,?)", o.UserID, key, hash, o.ID); e != nil {
@@ -203,14 +205,16 @@ func (s *Store) Attach(ctx context.Context, id string, session payment.Session) 
 		return ErrConflict
 	}
 	o.Ref = session.Ref
-	o.Checkout = nil
-	if session.Checkout.URL != "" || session.Checkout.ClientSecret != "" {
-		o.Checkout = &session.Checkout
-	}
-	o.Detail = "awaiting_payment"
 	o.NextCheck = time.Now().Add(30 * time.Second)
-	if o.Status == "flagged" && o.Credited == 0 {
+	if o.Status == "flagged" && o.Credited == 0 && o.Detail == "provider_create_unknown" {
 		o.Status = "pending"
+	}
+	if o.Status == "pending" {
+		o.Checkout = nil
+		if session.Checkout.URL != "" || session.Checkout.ClientSecret != "" || session.Checkout.CodeURL != "" || session.Checkout.Wechat != nil {
+			o.Checkout = &session.Checkout
+		}
+		o.Detail = "awaiting_payment"
 	}
 	if e = put(ctx, t, o); e != nil {
 		return e
@@ -227,11 +231,14 @@ func (s *Store) CreateUnknown(ctx context.Context, id string) error {
 	if e != nil {
 		return e
 	}
-	if o.Ref != "" {
+	if o.Ref != "" && o.Gateway != "wechat" {
+		return nil
+	}
+	if o.Status != "pending" {
 		return nil
 	}
 	o.Detail = "provider_create_unknown"
-	if o.Gateway == "allscale" || !time.Now().Before(o.ExpiresAt.Add(-30*time.Minute)) {
+	if o.Gateway == "allscale" || (o.Gateway == "stripe" && !time.Now().Before(o.ExpiresAt.Add(-30*time.Minute))) {
 		o.Status = "flagged"
 	}
 	if e = put(ctx, t, o); e != nil {
@@ -373,6 +380,11 @@ func (s *Store) Apply(ctx context.Context, gateway string, snap payment.Snapshot
 		return e
 	}
 	valid := snap.Amount == o.ProviderAmount && snap.Currency == o.ProviderCurrency && (snap.OrderID == "" || snap.OrderID == o.ID)
+	if gateway == "wechat" {
+		// 未付款的查询响应可能还没有 payer；实际成功必须核对绑定身份。
+		payerMatches := o.WechatOpenID == "" || snap.WechatOpenID == o.WechatOpenID || (snap.Status != "succeeded" && snap.WechatOpenID == "")
+		valid = valid && snap.OrderID == o.ID && snap.WechatAppID == o.WechatAppID && payerMatches
+	}
 	if !valid {
 		if o.Credited == 0 && o.Status != "refunded" {
 			o.Status = "flagged"

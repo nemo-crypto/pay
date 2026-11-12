@@ -1,3 +1,5 @@
+import QRCode from "/vendor/qrcode.mjs";
+
 const $ = (id) => document.getElementById(id);
 let token = "",
   plans = [],
@@ -6,7 +8,9 @@ let token = "",
   active = new URLSearchParams(location.search).get("order_id"),
   timer,
   mode,
-  intent;
+  intent,
+  wechatRate = "",
+  wechatCheckout;
 const labels = {
   pending: "等待支付确认",
   succeeded: "已到账",
@@ -37,6 +41,58 @@ function buttonLock(value) {
 }
 function resetIntent() {
   intent = null;
+  $("wechat-checkout").hidden = true;
+  updateWechatOptions();
+}
+const wechatHints = {
+  native: "电脑网页展示本地生成的付款二维码，使用手机微信扫码完成付款。",
+  h5: "适用于微信外的手机浏览器，将跳转微信收银台；微信内请选 JSAPI。",
+  jsapi: "须在微信内打开，并先通过公众号网页授权绑定当前 AppID 的身份。",
+  mini: "由小程序内 wx.requestPayment 调起；普通浏览器可查看接口返回参数。",
+  app: "由原生 App 的微信 OpenSDK 调起；普通浏览器可查看接口返回参数。",
+};
+function updateWechatOptions() {
+  const isWechat = document.querySelector("[name=gateway]:checked")?.value === "wechat";
+  $("wechat-options").hidden = !isWechat;
+  $("wechat-hint").textContent = wechatHints[$("wechat-scene").value];
+  const plan = plans.find((p) => p.id === selected);
+  if (isWechat && plan && wechatRate) {
+    // 展示报价仅供确认；实际扣款以服务端冻结的分金额为准。
+    const [whole, fraction = ""] = wechatRate.split(".");
+    const scale = 10n ** BigInt(fraction.length);
+    const rate = BigInt(whole) * scale + BigInt(fraction || "0");
+    if (rate > 0n) {
+      const numerator = BigInt(plan.nt_amount) * 100n * scale;
+      const fen = (numerator + rate - 1n) / rate;
+      $("wechat-quote").textContent = `预计人民币 ¥${fen / 100n}.${String(fen % 100n).padStart(2, "0")}，对应 NT$ ${plan.nt_amount} 储值；下单后冻结报价。`;
+    }
+  }
+}
+async function openCheckout(checkout) {
+  if (checkout?.url) {
+    if (checkout.mode === "h5" && mode !== "demo") {
+      const link = document.createElement("a");
+      link.href = checkout.url;
+      link.referrerPolicy = "origin";
+      document.body.append(link);
+      link.click();
+      link.remove();
+    } else location.assign(checkout.url);
+    return true;
+  }
+  if (checkout?.code_url || checkout?.wechat) {
+    wechatCheckout = checkout;
+    $("wechat-checkout").hidden = false;
+    $("wechat-action").textContent = checkout.code_url
+      ? "使用手机微信扫码付款，订单将在服务端确认后更新。"
+      : wechatHints[checkout.mode];
+    $("wechat-payload").textContent = checkout.code_url || JSON.stringify(checkout.wechat, null, 2);
+    $("wechat-invoke").hidden = checkout.mode !== "jsapi";
+    $("wechat-qr").hidden = !checkout.code_url;
+    if (checkout.code_url) await QRCode.toCanvas($("wechat-qr"), checkout.code_url, { width: 256, errorCorrectionLevel: "M" });
+    $("wechat-expiry").textContent = checkout.expires_at ? `付款参数有效至 ${new Date(checkout.expires_at).toLocaleTimeString()}` : "";
+  }
+  return false;
 }
 function addCell(row, text) {
   const td = document.createElement("td");
@@ -52,7 +108,7 @@ async function refresh() {
     const tr = document.createElement("tr");
     addCell(tr, o.id.slice(0, 14) + "…");
     addCell(tr, o.gateway);
-    addCell(tr, `NT$ ${o.nt_amount.toLocaleString()}`);
+    addCell(tr, `NT$ ${o.nt_amount.toLocaleString()}${o.payment_currency === "CNY" ? ` / ¥${(o.payment_amount_minor / 100).toFixed(2)}` : ""}`);
     addCell(tr, labels[o.status] || o.status);
     addCell(tr, o.total_credited.toLocaleString());
     $("orders").append(tr);
@@ -76,6 +132,7 @@ async function watch() {
   if (!active) return;
   try {
     const o = await api(`/topups/${encodeURIComponent(active)}`);
+    if (o.status !== "pending" || !o.checkout) $("wechat-checkout").hidden = true;
     message(
       `${labels[o.status] || o.status} · ${o.id}${
         o.status_detail ? " · " + o.status_detail : ""
@@ -103,6 +160,11 @@ async function boot() {
     mode = data.mode;
     $("mode").textContent = mode === "demo" ? "本地演示 · 不扣款" : "网关联调";
     plans = data.plans;
+    wechatRate = data.wechat_twd_per_cny || "";
+    for (const option of $("wechat-scene").options) option.disabled = !data.wechat_scenes?.includes(option.value);
+    const suggested = /MicroMessenger/i.test(navigator.userAgent) ? "jsapi" : /Android|iPhone|iPad/i.test(navigator.userAgent) ? "h5" : "native";
+    const scene = [...$("wechat-scene").options].find((o) => !o.disabled && o.value === suggested) || [...$("wechat-scene").options].find((o) => !o.disabled);
+    if (scene) $("wechat-scene").value = scene.value;
     selected = plans[0]?.id;
     for (const p of plans) {
       const b = document.createElement("button");
@@ -133,6 +195,7 @@ async function boot() {
       ) || document.querySelector("[name=gateway]:not(:disabled)");
     if (available) available.checked = true;
     else $("checkout").disabled = true;
+    updateWechatOptions();
     if (mode === "demo") {
       token = (await api("/demo/session", { method: "POST" })).token;
     } else {
@@ -142,6 +205,7 @@ async function boot() {
       $("catalog").hidden = true;
       $("plans").hidden = true;
       $("gateways").hidden = true;
+      $("wechat-options").hidden = true;
       $("checkout").hidden = true;
       $("title").textContent = "确认本次储值";
       $("simulation").hidden =
@@ -161,14 +225,11 @@ $("checkout").onclick = async () => {
     const o = await api("/topups", {
       method: "POST",
       headers: { "Idempotency-Key": intent },
-      body: JSON.stringify({ plan_id: selected, gateway }),
+      body: JSON.stringify({ plan_id: selected, gateway, ...(gateway === "wechat" ? { wechat_scene: $("wechat-scene").value } : {}) }),
     });
-    if (o.checkout?.url) {
-      location.assign(o.checkout.url);
-      return;
-    }
     active = o.order_id;
-    message("订单已存在，正在查询实际状态");
+    if (await openCheckout(o.checkout)) return;
+    message(o.replayed || o.reused ? "订单已存在，正在查询实际状态" : "订单已创建，请按所选场景完成付款");
     await watch();
   } catch (e) {
     message(e.message + "；结果未知时请重试原购买意图。");
@@ -200,8 +261,10 @@ $("resume").onclick = async () => {
     const o = await api(`/topups/${pending.order_id}/resume`, {
       method: "POST",
     });
-    if (o.resumable && o.checkout?.url) {
-      location.assign(o.checkout.url);
+    if (o.resumable && o.checkout) {
+      active = o.order_id;
+      if (await openCheckout(o.checkout)) return;
+      await watch();
       return;
     }
     message(
@@ -244,4 +307,19 @@ document.querySelectorAll("[data-outcome]").forEach(
     }),
 );
 window.addEventListener("pagehide", () => clearTimeout(timer));
+$("wechat-scene").onchange = resetIntent;
+$("wechat-copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("wechat-payload").textContent); message("付款参数已复制。"); }
+  catch { message("复制失败，请手动选择付款参数复制。"); }
+};
+$("wechat-invoke").onclick = () => {
+  if (!window.WeixinJSBridge || !wechatCheckout?.wechat) {
+    message("请在微信内打开此页，并完成公众号身份绑定。");
+    return;
+  }
+  window.WeixinJSBridge.invoke("getBrandWCPayRequest", wechatCheckout.wechat, () => {
+    message("正在向服务端确认支付结果…");
+    void watch();
+  });
+};
 void boot();

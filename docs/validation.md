@@ -1,5 +1,16 @@
 # 验证记录
 
+## 微信支付五场景扩展（2026-11-12）
+
+实现普通直连商户 API v3：小程序、公众号/微信内 JSAPI、外部手机 H5、PC Native、原生 App。沿用储值订单与事务账本，加入各场景身份绑定、CNY固定报价快照、商户RSA签名、平台响应/通知验签、AES-GCM通知解密、商户单号补查和本地模拟。首页新增场景选择和本地 Native 二维码编码，离线教程 `/guides/wechat` 已注册。
+
+- 微信专项回归通过：五种下单路径及请求字段、独立重建原文验证商户请求和客户端签名、API成功响应验签、通知篡改/过期/错误平台ID/错误解密密钥、商户/AppID/OpenID/币种/金额不符、客户端URL校验、状态映射、PKCS#1和PKCS#8密钥读取、重复通知只入账一次、汇率变化后的原意图重放、丢通知查单、下单超时保留商户单号、早到回调不被晚到响应覆盖、H5付款链接过期、数据库重新打开后的身份保留、可信代理IP提取、配置完整性及演示模式不使用真实密钥。
+- `GOCACHE=/tmp/chovy-pay-go-cache go test -race ./... -skip '^(TestStripeCreateFieldsAndIdempotency|TestAllscaleProtocol|TestAllscaleRejectsUnsignedResponseWhenRequired|TestTransakTokenCacheAndSessionAPI)$'`：所有包通过。跳过的4项是既有依赖本地TCP监听的测试，当前沙箱禁止监听；新增微信协议测试使用内存HTTP Transport，无需端口。
+- `go vet ./...`、`go build ./cmd/server ./cmd/token`、JS语法及 `git diff --check` 通过（Go使用上述 `/tmp` 缓存）。二维码浏览器模块来自工作区已有 node-qrcode 1.5.4 / dijkstrajs 1.0.3，由 esbuild 0.28.2 离线打包，附MIT许可证，无新增Go依赖或运行时CDN。
+- 新增 `npm run test:wechat` 五场景浏览器回归，更新原储值脚本的七通道卡片计数。浏览器**未通过环境启动**：pay 尚未安装 Playwright；使用工作区已有1.58.2尝试启动后，Chromium因macOS沙箱 `MachPortRendezvousServer: Permission denied` 退出，因此没有宣称本轮页面/E2E验收通过。
+
+当前无法解析微信官方域名，未访问真实商户API、未扣款、未进行微信客户端或商户公网通知验收。后续需在正常环境执行 `npm ci`、安装Chromium，在独立全新demo服务/限流窗口运行三类浏览器回归，再用已开通产品的商户按五类终端分别联调。公众号OAuth、小程序code2session及原生OpenSDK工程由原应用接入；服务商/子商户、主动关单、退款流程及自动平台公钥轮换不在本轮实现内。
+
 ## 金额边界、限流隔离与对账索引（2026-11-12）
 
 - 汇率报价在高精度整数中完成元到分的乘法，避免 `int64` 溢出；覆盖正负溢出输入、最大输出边界及大金额合法报价，保留向上取整规则。

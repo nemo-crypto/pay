@@ -2,13 +2,19 @@
 
 ## 与参考前端的对应关系
 
-本项目依据参考前端的 `/topup/plans`、`/topups`、pending/resume/cancel-hint、订单轮询及 `/me.coins` 契约设计。`nt_amount` 是整数 TWD 元，不是分；Stripe 转为分，Allscale 转为 USD 美分。状态包括 pending/succeeded/failed/expired/flagged/refunded。默认返回地址为 `/top-up/success?order_id=...` 与 `/top-up/cancel?order_id=...`。
+本项目依据参考前端的 `/topup/plans`、`/topups`、pending/resume/cancel-hint、订单轮询及 `/me.coins` 契约设计。`nt_amount` 是整数 TWD 元，不是分；Stripe 转为分，Allscale 转为 USD 美分，微信支付根据服务端固定报价转为 CNY 分并冻结快照。状态包括 pending/succeeded/failed/expired/flagged/refunded。默认返回地址为 `/top-up/success?order_id=...` 与 `/top-up/cancel?order_id=...`。
 
 前端 API base URL 指向 Go 服务，跨域时将前端完整 origin 加入 `CHECKOUT_ALLOWED_ORIGINS`，包括协议和端口，不加末尾斜杠。JWT 的密钥、issuer、audience 必须与真实认证系统一致；若原系统使用 RS256/JWKS，应替换 auth 适配器，不要直接接受未验证的旧 token。
 
 `source`、`live_room` 可随订单记录；`tracking_event_id` 接受但不实现分析事件投递。`first_topup_discount=false`，促销点数为0；首储标记来自首次实际入账。原应用的首储折扣、卡片管理、推广分成、直播归因结算、消费扣点均不在此实现内。套餐 ID 通过 `PLANS_FILE` 配置为原前端需要的值，文件为 `[{"id":"plan-a","nt_amount":1000,"coin_amount":2000}]`。
 
-演示网页使用 hosted 模式。Stripe embedded 后端会返回 `client_secret`，已有前端需自行加载 Stripe.js、使用自己的 publishable key 挂载 Checkout，并配置其 CSP。Allscale 仅 hosted；恢复接口当前仅恢复 Stripe（与参考契约一致），Allscale 通过订单查询确认结果。不要在 Allscale 尚未查明结果时诱导用户重复付款。
+Stripe/Allscale 演示网页使用 hosted 模式。Stripe embedded 后端会返回 `client_secret`，已有前端需自行加载 Stripe.js、使用自己的 publishable key 挂载 Checkout，并配置其 CSP。Allscale 仅 hosted；恢复接口支持 Stripe 和未过期的微信付款参数，Allscale 通过订单查询确认结果。不要在支付结果尚未查明时诱导用户重复付款。
+
+## 微信支付联调
+
+普通直连商户支持 `mini`、`jsapi`、`h5`、`native`、`app`；请求 `gateway=wechat` 并显式指定 `wechat_scene`。不同场景使用对应 AppID；小程序/公众号 OpenID 来自原应用登录服务签名 JWT 的 `wechat_openids`，不接收前端自报 OpenID。H5 只信任明确配置的代理提供的 `X-Real-IP`。Native 二维码在浏览器本地生成。
+
+配置商户私钥/证书序列号、32字节APIv3密钥、固定的平台公钥及ID和 `WECHAT_TWD_PER_CNY`；通知路径 `/webhooks/wechat` 验签、解密、持久化后返回204，Worker核对原始订单金额及身份后事务入账。下单超时仅补查原商户单号，不重复建单。完整配置、五类客户端接法、H5短链接有效期、身份登录边界和退款限制见[微信支付教程](providers/wechat.md)。
 
 ## Stripe 联调
 
@@ -58,9 +64,9 @@ Content-Type: application/json
 
 上线前在各商户环境完成低额端到端验收、丢回调恢复和退款验证，再决定开放业务流量。当前测试与演示没有连接真实支付网关或发起真实扣款。
 
-## 六家教程入口
+## 七家教程入口
 
-统一总览与启动步骤见根目录README；Stripe、Allscale、MoonPay、Alchemy Pay、Transak、Ramp各自逐步教程见 [教程目录](providers/README.md)。四家买币接口与储值接口共用Go服务，但买币交付不直接修改平台点数。
+统一总览与启动步骤见根目录README；微信支付、Stripe、Allscale、MoonPay、Alchemy Pay、Transak、Ramp各自逐步教程见 [教程目录](providers/README.md)。四家买币接口与储值接口共用Go服务，但买币交付不直接修改平台点数。
 
 ## 买币事件重试与旧数据库升级
 

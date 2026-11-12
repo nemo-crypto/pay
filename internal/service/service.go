@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -25,27 +26,32 @@ type Service struct {
 	worker    sync.Mutex
 }
 type CreateInput struct {
-	PlanID     string `json:"plan_id"`
-	AmountNT   int64  `json:"amount_nt"`
-	Gateway    string `json:"gateway"`
-	Mode       string `json:"ui_mode"`
-	SuccessURL string `json:"success_url"`
-	CancelURL  string `json:"cancel_url"`
-	ReturnURL  string `json:"return_url"`
-	Source     string `json:"source"`
-	LiveRoom   string `json:"live_room"`
-	TrackingID string `json:"tracking_event_id"`
+	PlanID       string `json:"plan_id"`
+	AmountNT     int64  `json:"amount_nt"`
+	Gateway      string `json:"gateway"`
+	Mode         string `json:"ui_mode"`
+	SuccessURL   string `json:"success_url"`
+	CancelURL    string `json:"cancel_url"`
+	ReturnURL    string `json:"return_url"`
+	Source       string `json:"source"`
+	LiveRoom     string `json:"live_room"`
+	TrackingID   string `json:"tracking_event_id"`
+	WechatScene  string `json:"wechat_scene,omitempty"`
+	WechatOpenID string `json:"-"`
+	ClientIP     string `json:"-"`
 }
 type Result struct {
-	OrderID       string            `json:"order_id"`
-	Gateway       string            `json:"gateway"`
-	Status        string            `json:"status"`
-	Checkout      *payment.Checkout `json:"checkout"`
-	Replayed      bool              `json:"replayed"`
-	Reused        bool              `json:"reused"`
-	NTAmount      int64             `json:"nt_amount"`
-	Currency      string            `json:"currency"`
-	FirstDiscount bool              `json:"first_topup_discount"`
+	OrderID            string            `json:"order_id"`
+	Gateway            string            `json:"gateway"`
+	Status             string            `json:"status"`
+	Checkout           *payment.Checkout `json:"checkout"`
+	Replayed           bool              `json:"replayed"`
+	Reused             bool              `json:"reused"`
+	NTAmount           int64             `json:"nt_amount"`
+	Currency           string            `json:"currency"`
+	FirstDiscount      bool              `json:"first_topup_discount"`
+	PaymentCurrency    string            `json:"payment_currency"`
+	PaymentAmountMinor int64             `json:"payment_amount_minor"`
 }
 type Error struct {
 	Code, Message string
@@ -112,7 +118,7 @@ func (s *Service) Create(ctx context.Context, user, key string, in CreateInput) 
 	if in.Gateway == "" {
 		in.Gateway = "stripe"
 	}
-	if in.Gateway != "stripe" && in.Gateway != "allscale" {
+	if in.Gateway != "stripe" && in.Gateway != "allscale" && in.Gateway != "wechat" {
 		return Result{}, bad("VALIDATION", "不支持的支付方式")
 	}
 	provider, ok := s.Providers[in.Gateway]
@@ -124,6 +130,28 @@ func (s *Service) Create(ctx context.Context, user, key string, in CreateInput) 
 	}
 	if in.Mode != "hosted" && in.Mode != "embedded" {
 		return Result{}, bad("VALIDATION", "无效 ui_mode")
+	}
+	if in.Gateway == "wechat" {
+		if in.WechatScene != "mini" && in.WechatScene != "jsapi" {
+			in.WechatOpenID = ""
+		}
+		if in.WechatScene != "h5" {
+			in.ClientIP = ""
+		}
+		if in.WechatScene == "h5" && net.ParseIP(in.ClientIP) == nil {
+			return Result{}, bad("VALIDATION", "H5 支付需要真实客户端 IP，请检查可信代理配置")
+		}
+		if s.Config.Wechat.AppFor(in.WechatScene) == "" {
+			return Result{}, bad("VALIDATION", "请选择已启用的微信支付场景")
+		}
+		if in.Mode != "hosted" {
+			return Result{}, bad("VALIDATION", "微信支付不使用 embedded 模式，请指定 wechat_scene")
+		}
+		if (in.WechatScene == "mini" || in.WechatScene == "jsapi") && (in.WechatOpenID == "" || len(in.WechatOpenID) > 128) {
+			return Result{}, &Error{Code: "WECHAT_IDENTITY_REQUIRED", Message: "请先通过对应微信应用登录并绑定身份", HTTP: 403}
+		}
+	} else if in.WechatScene != "" {
+		return Result{}, bad("VALIDATION", "wechat_scene 仅适用于微信支付")
 	}
 	if (in.PlanID == "") == (in.AmountNT == 0) {
 		return Result{}, bad("VALIDATION", "plan_id 与 amount_nt 必须二选一")
@@ -171,11 +199,22 @@ func (s *Service) Create(ctx context.Context, user, key string, in CreateInput) 
 	if in.CancelURL, e = s.returnURL(in.CancelURL, "/top-up/cancel"); e != nil {
 		return Result{}, e
 	}
-	if in.ReturnURL, e = s.returnURL(in.ReturnURL, "/top-up/success?session_id={CHECKOUT_SESSION_ID}"); e != nil {
+	returnFallback := "/top-up/success?session_id={CHECKOUT_SESSION_ID}"
+	if in.Gateway == "wechat" {
+		returnFallback = "/top-up/success"
+	}
+	if in.ReturnURL, e = s.returnURL(in.ReturnURL, returnFallback); e != nil {
 		return Result{}, e
 	}
 	// 请求指纹与网关价格快照分离；相同购买意图不会因汇率刷新被重新收费。
-	b, _ := json.Marshal(in)
+	// OpenID 只从受信任身份获取；AppID 和身份也必须参与购买意图指纹。
+	b, _ := json.Marshal(struct {
+		Input         CreateInput
+		AppID, OpenID string
+	}{in, s.Config.Wechat.AppFor(in.WechatScene), in.WechatOpenID})
+	if in.Gateway != "wechat" {
+		b, _ = json.Marshal(in)
+	}
 	hash := payment.BodyHash(b)
 	now := time.Now().UTC()
 	mode := in.Mode
@@ -183,6 +222,18 @@ func (s *Service) Create(ctx context.Context, user, key string, in CreateInput) 
 		mode = "hosted"
 	}
 	o := payment.Order{ID: payment.ID("top_"), UserID: user, PlanID: in.PlanID, Kind: kind, Gateway: in.Gateway, NTAmount: nt, Coins: coins, Status: "pending", Currency: "TWD", ProviderCurrency: "TWD", ProviderAmount: nt * 100, Mode: mode, Source: in.Source, LiveRoom: in.LiveRoom, CreatedAt: now, ExpiresAt: now.Add(2 * time.Hour), UpdatedAt: now, NextCheck: now.Add(time.Minute)}
+	if in.Gateway == "wechat" {
+		o.ID = "wx_" + payment.ID("")[:29]
+		// 下单前持久化商户单号，超时和回调先到均可用同一单号补查。
+		o.Ref = o.ID
+		o.WechatScene, o.WechatAppID, o.WechatOpenID, o.ClientIP = in.WechatScene, s.Config.Wechat.AppFor(in.WechatScene), in.WechatOpenID, in.ClientIP
+		o.Mode, o.ProviderCurrency, o.FXRate = in.WechatScene, "CNY", s.Config.Wechat.TWDPerCNY
+		o.ExpiresAt = now.Add(30 * time.Minute)
+		o.ProviderAmount, e = Quote(nt, o.FXRate)
+		if e != nil {
+			return Result{}, &Error{Code: "PAYMENT_UNAVAILABLE", Message: "人民币报价配置不可用", HTTP: 503}
+		}
+	}
 	if in.Gateway == "allscale" {
 		o.ProviderCurrency = "USD"
 		o.FXRate = s.Config.FXRate
@@ -218,10 +269,10 @@ func (s *Service) Create(ctx context.Context, user, key string, in CreateInput) 
 }
 func result(o payment.Order, replay, reuse bool) Result {
 	checkout := o.Checkout
-	if o.Status != "pending" || o.Abandoned || time.Now().After(o.ExpiresAt) {
+	if o.Status != "pending" || o.Abandoned || time.Now().After(o.ExpiresAt) || checkoutExpired(checkout) {
 		checkout = nil
 	}
-	return Result{o.ID, o.Gateway, o.Status, checkout, replay, reuse, o.NTAmount, o.Currency, false}
+	return Result{OrderID: o.ID, Gateway: o.Gateway, Status: o.Status, Checkout: checkout, Replayed: replay, Reused: reuse, NTAmount: o.NTAmount, Currency: o.Currency, PaymentCurrency: o.ProviderCurrency, PaymentAmountMinor: o.ProviderAmount}
 }
 func (s *Service) Owned(ctx context.Context, user, id string) (payment.Order, error) {
 	o, e := s.Store.Get(ctx, id)
@@ -231,10 +282,14 @@ func (s *Service) Owned(ctx context.Context, user, id string) (payment.Order, er
 	if o.UserID != user {
 		return payment.Order{}, store.ErrNotFound
 	}
-	if o.Status != "pending" || o.Abandoned || time.Now().After(o.ExpiresAt) {
+	if o.Status != "pending" || o.Abandoned || time.Now().After(o.ExpiresAt) || checkoutExpired(o.Checkout) {
 		o.Checkout = nil
 	}
 	return o, nil
+}
+
+func checkoutExpired(c *payment.Checkout) bool {
+	return c != nil && c.ExpiresAt != nil && !time.Now().Before(*c.ExpiresAt)
 }
 func (s *Service) Sync(ctx context.Context, o payment.Order) error {
 	if o.Ref == "" {

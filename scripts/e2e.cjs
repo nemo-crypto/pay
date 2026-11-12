@@ -32,7 +32,7 @@ const fs = require("node:fs");
           true,
           "horizontal overflow",
         );
-        assert.equal(await page.locator(".provider-card").count(), 6);
+        assert.equal(await page.locator(".provider-card").count(), 7);
         assert.equal(
           await page.locator(`[name=gateway][value=${gateway}]`).isChecked(),
           true,
