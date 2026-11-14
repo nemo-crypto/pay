@@ -29,7 +29,7 @@ func fail(w http.ResponseWriter, err error) {
 		result = safe
 	case errors.Is(err, ErrNotFound):
 		result = &APIError{HTTP: 404, Code: "NOT_FOUND", Message: "订单或通道不存在"}
-	case errors.Is(err, ErrConflict):
+	case errors.Is(err, ErrConflict), errors.Is(err, errSnapshotMismatch):
 		result = &APIError{HTTP: 409, Code: "CONFLICT", Message: "请求与已有订单或当前操作状态冲突，请查询原订单"}
 	case errors.Is(err, ErrPending):
 		result = &APIError{HTTP: 409, Code: "WAITING_PROVIDER_REFERENCE", Message: "供应商订单尚未生成或缺少查询引用，请等待通知或核对后绑定", Retriable: true}

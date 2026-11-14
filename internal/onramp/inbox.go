@@ -53,7 +53,7 @@ type inboxJob struct {
 }
 
 func (e *Engine) deferEvent(ctx context.Context, j inboxJob, cause error) error {
-	permanent := errors.Is(cause, ErrConflict) || errors.Is(cause, ErrNotFound) || errors.Is(cause, errInvalidEvent)
+	permanent := errors.Is(cause, ErrConflict) || errors.Is(cause, ErrNotFound) || errors.Is(cause, errInvalidEvent) || errors.Is(cause, errSnapshotMismatch)
 	code := "processing_unavailable"
 	if errors.Is(cause, ErrConflict) {
 		code = "provider_reference_conflict"
@@ -63,6 +63,9 @@ func (e *Engine) deferEvent(ctx context.Context, j inboxJob, cause error) error 
 	}
 	if errors.Is(cause, errInvalidEvent) {
 		code = "invalid_event_data"
+	}
+	if errors.Is(cause, errSnapshotMismatch) {
+		code = "provider_fields_mismatch"
 	}
 	delay := 30 * time.Second
 	for i := 0; i < j.Attempts && delay < time.Hour; i++ {
@@ -76,3 +79,5 @@ func (e *Engine) deferEvent(ctx context.Context, j inboxJob, cause error) error 
 }
 
 var errInvalidEvent = errors.New("invalid stored event")
+
+var errSnapshotMismatch = errors.New("provider snapshot does not match settled order")

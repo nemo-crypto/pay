@@ -36,7 +36,7 @@ go run ./cmd/server
 
 打开 <http://127.0.0.1:8098>：从七通道卡片进入对应演示与教程，下方提供微信支付/Stripe/Allscale储值表单。页面导航可进入 <http://127.0.0.1:8098/onramp>：选择其余四家买币方式。两组入口使用同一个Go服务、同一套登录约定和本地持久化；分别展示对应业务结果。
 
-默认`PAY_MODE=demo`，只允许监听本机。程序直接读取环境变量，**不会自动加载.env文件**。完整配置见 [.env.example](.env.example)，数据库目录已被Git忽略。
+默认`PAY_MODE=demo`，只允许监听本机。程序直接读取环境变量，**不会自动加载.env文件**。完整配置见 [.env.example](.env.example)，数据库目录已被Git忽略。demo 固定使用公开演示 JWT 密钥，不使用传入的正式密钥；live 拒绝公开演示密钥。数据库在首次启动时绑定支付环境，demo/live、Stripe 测试/正式及买币 sandbox/production 必须使用不同的 `DATABASE_PATH`。无环境标记且已有数据的旧库不会自动接管，升级前请阅读[环境隔离与安全复核](docs/security-boundaries.md)。
 
 ## 3. 第二步：逐家完成一次成功流程
 

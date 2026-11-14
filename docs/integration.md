@@ -48,6 +48,12 @@ Content-Type: application/json
 
 服务端重新查询该 intent 并核对 order_id、金额和币种；只有匹配后才绑定并更新状态。不能提交任意交易哈希让后台加点。其他 flagged 订单没有通用自动解冻接口，需要审核证据、制定有审计记录的补偿操作；禁止直接修改余额。Allscale Claim Link 是出款产品，不当作 Checkout 退款接口。
 
+## 支付环境隔离
+
+启动会在网关初始化和 Worker 执行前核对数据库环境。一个数据库只属于 demo，或指定 Stripe 测试/正式与买币 sandbox/production 组合的 live 环境；修改这些环境设置应更换 `DATABASE_PATH`，不能复用旧库中的余额、inbox 或 token。新空库自动绑定，同环境重启不改变数据。
+
+无环境标记且已有业务数据的旧库会拒绝启动。升级前备份并核实其历史环境后再执行受控迁移，不能根据当前环境变量直接给旧数据盖章；本次没有自动迁移、删除、清账或解封旧库。纯本地演示可改用新数据库文件，保留旧文件供核对。完整复核记录保存在仓库 `docs/security-boundaries.md`。
+
 ## 数据、任务与监控
 
 数据库包含 users、orders、requests（幂等键）、ledger、inbox、demo_payments。网络调用在事务外，余额、账本、订单与 inbox 完成状态在同一事务内提交。重复事件通过唯一约束去重，同 nonce 不同事件被拒绝。金额不匹配不入账，并记录 payment_mismatch。

@@ -145,3 +145,77 @@ func TestActionableHTTPErrorAndUpstreamRetry(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
+
+func TestMismatchedSignedEventsCannotDowngradeSettledOrders(t *testing.T) {
+	for _, name := range Names {
+		statuses := []string{"completed"}
+		// MoonPay 当前适配器没有独立 refunded 状态，不伪造其协议。
+		if name != "moonpay" {
+			statuses = append(statuses, "refunded")
+		}
+		for _, status := range statuses {
+			t.Run(name+"/"+status, func(t *testing.T) {
+				e := fixture(t)
+				o := order(t, e, name)
+				a := e.Adapters[name]
+				req, body, err := a.mockEvent(o, mockPayload(o, status))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = e.Ingest(context.Background(), req, body, name); err != nil {
+					t.Fatal(err)
+				}
+				e.Tick(context.Background())
+				before, err := e.Get(context.Background(), "alice", o.ID)
+				if err != nil || before.Status != status {
+					t.Fatal(before.Status, err)
+				}
+				wrong := o
+				wrong.Wallet = "0x2222222222222222222222222222222222222222"
+				req, body, err = a.mockEvent(o, mockPayload(wrong, "completed"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = e.Ingest(context.Background(), req, body, name); err != nil {
+					t.Fatal(err)
+				}
+				e.Tick(context.Background())
+				after, err := e.Get(context.Background(), "alice", o.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if after != before {
+					t.Fatal("mismatched event changed settled order")
+				}
+				var count int
+				err = e.DB.QueryRow("SELECT COUNT(*) FROM onramp_events WHERE order_id=? AND processed=0 AND dead_letter=1 AND last_error='provider_fields_mismatch'", o.ID).Scan(&count)
+				if err != nil || count != 1 {
+					t.Fatal("mismatched event not quarantined", count, err)
+				}
+			})
+		}
+	}
+}
+
+func TestVerifiedRefundStillUpdatesCompletedOrder(t *testing.T) {
+	for _, name := range []string{"alchemypay", "transak", "ramp"} {
+		t.Run(name, func(t *testing.T) {
+			e := fixture(t)
+			o := order(t, e, name)
+			for _, status := range []string{"completed", "refunded"} {
+				req, body, err := e.Adapters[name].mockEvent(o, mockPayload(o, status))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = e.Ingest(context.Background(), req, body, name); err != nil {
+					t.Fatal(err)
+				}
+				e.Tick(context.Background())
+				current, err := e.Get(context.Background(), "alice", o.ID)
+				if err != nil || current.Status != status {
+					t.Fatal(current.Status, err)
+				}
+			}
+		})
+	}
+}

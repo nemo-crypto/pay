@@ -35,6 +35,9 @@ func run() error {
 		return e
 	}
 	defer db.DB.Close()
+	if e = db.EnsureEnvironment(context.Background(), cfg.EnvironmentKey()); e != nil {
+		return e
+	}
 	providers := map[string]payment.Provider{}
 	if cfg.Mode == "demo" {
 		wechat, err := payment.NewDemoWechat(db.DB, cfg.PublicURL)

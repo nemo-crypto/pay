@@ -262,6 +262,10 @@ func (e *Engine) apply(ctx context.Context, id string, s Snapshot, eventID strin
 	}
 	valid := strings.EqualFold(o.Wallet, s.Wallet) && o.Fiat == s.Fiat && o.FiatMinor == s.FiatMinor && o.Asset == s.Asset && o.Network == s.Network && (s.ExternalID == "" || s.ExternalID == o.ID) && (o.Ref == "" || o.Ref == s.Ref)
 	if !valid {
+		// 已交付/已退款结果不能由不匹配的快照撤销；保留原结果并隔离通知。
+		if o.Status == "completed" || o.Status == "refunded" {
+			return errSnapshotMismatch
+		}
 		o.Status = "review"
 		o.Detail = "provider_fields_mismatch"
 		o.Checkout = ""

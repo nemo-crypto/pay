@@ -146,3 +146,39 @@ func TestTransakTokenCacheSurvivesRestart(t *testing.T) {
 		t.Fatal("cache restoration failed")
 	}
 }
+
+func TestLiveRejectsPublicMockOnrampCredentials(t *testing.T) {
+	for _, tc := range []struct{ name, key, secret, webhook string }{
+		{"moonpay", "MOONPAY_PUBLIC_KEY", "MOONPAY_SECRET_KEY", "MOONPAY_WEBHOOK_KEY"},
+		{"alchemypay", "ALCHEMYPAY_APP_ID", "ALCHEMYPAY_APP_SECRET", ""},
+		{"transak", "TRANSAK_API_KEY", "TRANSAK_API_SECRET", ""},
+		{"ramp", "RAMP_HOST_API_KEY", "", ""},
+	} {
+		for _, field := range []string{"key", "secret", "webhook"} {
+			if (field == "secret" && tc.secret == "") || (field == "webhook" && tc.webhook == "") {
+				continue
+			}
+			t.Run(tc.name+"/"+field, func(t *testing.T) {
+				t.Setenv("ONRAMP_PROVIDERS", tc.name)
+				t.Setenv(tc.key, "merchant-key")
+				if tc.secret != "" {
+					t.Setenv(tc.secret, "merchant-secret")
+				}
+				if tc.webhook != "" {
+					t.Setenv(tc.webhook, "merchant-webhook-secret")
+				}
+				switch field {
+				case "key":
+					t.Setenv(tc.key, "mock-public-"+tc.name)
+				case "secret":
+					t.Setenv(tc.secret, "mock-secret-"+tc.name)
+				case "webhook":
+					t.Setenv(tc.webhook, "mock-webhook-"+tc.name)
+				}
+				if _, err := Adapters("live", "https://merchant.test"); err == nil {
+					t.Fatal("public mock credential accepted")
+				}
+			})
+		}
+	}
+}

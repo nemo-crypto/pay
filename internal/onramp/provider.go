@@ -96,6 +96,9 @@ func Adapters(mode, public string) (map[string]*Adapter, error) {
 			a.TokenExpires = time.Now().Add(7 * 24 * time.Hour)
 			a.RampKey = "demo"
 		} else {
+			if a.Key == "mock-public-"+name || a.Secret == "mock-secret-"+name || a.WebhookSecret == "mock-webhook-"+name {
+				return nil, fmt.Errorf("public demo credentials cannot be used for live %s", name)
+			}
 			if a.Key == "" || (name != "ramp" && a.Secret == "") || (name == "moonpay" && a.WebhookSecret == "") {
 				return nil, fmt.Errorf("missing %s onramp credentials", name)
 			}

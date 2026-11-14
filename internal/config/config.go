@@ -18,7 +18,11 @@ type Plan struct {
 	NTAmount int64  `json:"nt_amount"`
 	Coins    int64  `json:"coin_amount"`
 }
+
+const DemoJWTSecret = "local-demo-only-do-not-use-in-production-2026"
+
 type Config struct {
+	OnrampEnvironment                                                   string
 	Mode, Addr, Database, PublicURL, JWTSecret, Issuer, Audience        string
 	StripeKey, StripeWebhookSecret, AllscaleKey, AllscaleSecret, FXRate string
 	StripeLive, AllscaleSigned                                          bool
@@ -37,8 +41,25 @@ func env(k, fallback string) string {
 	}
 	return fallback
 }
+
+// EnvironmentKey 不包含凭据；一个数据库只属于一种支付运行环境。
+func (c Config) EnvironmentKey() string {
+	if c.Mode == "demo" {
+		return "demo"
+	}
+	stripe := "test"
+	if c.StripeLive {
+		stripe = "live"
+	}
+	return "live:stripe_" + stripe + ":onramp_" + c.OnrampEnvironment
+}
+
 func Load() (Config, error) {
 	c := Config{Mode: env("PAY_MODE", "demo"), Addr: env("HTTP_ADDR", "127.0.0.1:8080"), Database: env("DATABASE_PATH", "data/pay.db"), PublicURL: strings.TrimRight(env("PUBLIC_URL", "http://127.0.0.1:8080"), "/"), JWTSecret: os.Getenv("JWT_SECRET"), Issuer: env("JWT_ISSUER", "pay-demo"), Audience: env("JWT_AUDIENCE", "pay-api"), StripeKey: os.Getenv("STRIPE_SECRET_KEY"), StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"), AllscaleKey: os.Getenv("ALLSCALE_API_KEY"), AllscaleSecret: os.Getenv("ALLSCALE_API_SECRET"), FXRate: os.Getenv("ALLSCALE_TWD_PER_USD"), StripeLive: os.Getenv("STRIPE_LIVE") == "true", AllscaleSigned: os.Getenv("ALLSCALE_SIGNED_RESPONSES") == "true", Custom: os.Getenv("CUSTOM_TOPUP_ENABLED") == "true", DailyLimit: 100000, Interval: 30 * time.Second}
+	c.OnrampEnvironment = env("ONRAMP_ENV", "sandbox")
+	if c.OnrampEnvironment != "sandbox" && c.OnrampEnvironment != "production" {
+		return c, fmt.Errorf("ONRAMP_ENV must be sandbox or production")
+	}
 	c.Wechat = payment.WechatConfig{MchID: os.Getenv("WECHAT_MCH_ID"), Serial: os.Getenv("WECHAT_MERCHANT_SERIAL"), PrivateKeyFile: os.Getenv("WECHAT_PRIVATE_KEY_FILE"), APIv3Key: os.Getenv("WECHAT_API_V3_KEY"), PlatformKeyID: os.Getenv("WECHAT_PLATFORM_KEY_ID"), PlatformKeyFile: os.Getenv("WECHAT_PLATFORM_PUBLIC_KEY_FILE"), AppID: os.Getenv("WECHAT_APP_ID"), MiniAppID: os.Getenv("WECHAT_MINI_APP_ID"), MobileAppID: os.Getenv("WECHAT_MOBILE_APP_ID"), TWDPerCNY: os.Getenv("WECHAT_TWD_PER_CNY")}
 	c.WechatTrustedProxies = strings.FieldsFunc(os.Getenv("WECHAT_TRUSTED_PROXY_CIDRS"), func(r rune) bool { return r == ',' })
 	for _, raw := range c.WechatTrustedProxies {
@@ -78,8 +99,11 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("PUBLIC_URL must be an origin")
 	}
 	if c.Mode == "live" {
-		if u.Scheme != "https" || len(c.JWTSecret) < 32 {
-			return c, fmt.Errorf("live mode requires HTTPS PUBLIC_URL and JWT_SECRET >=32 bytes")
+		if u.Scheme != "https" || len(strings.TrimSpace(c.JWTSecret)) < 32 || strings.TrimSpace(c.JWTSecret) == DemoJWTSecret {
+			return c, fmt.Errorf("live mode requires HTTPS PUBLIC_URL and a non-demo JWT_SECRET >=32 bytes")
+		}
+		if c.StripeWebhookSecret == "whsec_local_demo_only" || c.AllscaleKey == "local-demo-key" || c.AllscaleSecret == "local-demo-secret" {
+			return c, fmt.Errorf("live mode cannot use public demo payment credentials")
 		}
 		if c.StripeKey != "" && (c.StripeWebhookSecret == "" || (!strings.HasPrefix(c.StripeKey, "sk_test_") && !strings.HasPrefix(c.StripeKey, "sk_live_")) || strings.HasPrefix(c.StripeKey, "sk_live_") != c.StripeLive) {
 			return c, fmt.Errorf("Stripe key/mode/webhook configuration mismatch")
@@ -93,9 +117,8 @@ func Load() (Config, error) {
 		if !strings.HasPrefix(c.Addr, "127.0.0.1:") && !strings.HasPrefix(c.Addr, "localhost:") {
 			return c, fmt.Errorf("demo must bind loopback")
 		}
-		if c.JWTSecret == "" {
-			c.JWTSecret = "local-demo-only-do-not-use-in-production-2026"
-		}
+		// 公开演示登录不能使用误传入的正式认证密钥签发 token。
+		c.JWTSecret = DemoJWTSecret
 		if c.FXRate == "" {
 			c.FXRate = "32.00"
 		}
