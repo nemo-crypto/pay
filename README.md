@@ -22,7 +22,7 @@ Allscale币种和EVM网络以结账页实际可用项为准。买币示例限定
 
 ## 2. 第一步：启动七通道本地环境
 
-需要Go 1.23+（验证环境1.25.11），命令行演示另需Python3。运行网页不需要Node或外部数据库。
+需要Go 1.26+（项目工具链、CI 与 Docker 固定1.26.11），命令行演示另需Python3。运行网页不需要Node或外部数据库。
 
 ```sh
 git clone git@github.com:nemo-crypto/pay.git

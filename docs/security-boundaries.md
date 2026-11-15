@@ -29,3 +29,14 @@
 - 临时进程 HTTP 检查：七通道生命周期通过，三笔储值精确增加6000点，四家买币不额外加点；普通用户访问管理员接口、其他用户访问储值/买币订单被拒绝。
 - 实际启动检查：同环境重启通过；demo 数据库在 live 下拒绝启动并保留余额和环境；全新 live 正常启动但不开放 `/demo/session`；变更 Stripe/买币环境后复用数据库被拒绝。
 - 没有修改浏览器业务代码；浏览器 E2E 未运行，本地未安装 Playwright。HTTP 与单测不能替代真实商户的支付验收。
+
+## 2026-11-15 入口与依赖补充修复
+
+- demo 校验实际 HTTP Host（包含端口）与 `PUBLIC_URL` 一致，拒绝 DNS rebinding 来源及伪造 `X-Forwarded-Host`，避免恶意网站读取本机演示 session。访问 demo 时必须使用配置中的地址；反向代理需保留该 Host。此校验仅用于 demo，不改变 live 商户回调入口。
+- 买币限流表达到 10,000 个活跃主体后不再插入新主体，防止拒绝请求的同时持续增长内存；储值限流同样严格限制容量，已有用户不会仅因容量被占满而全局拒绝。过期记录释放名额，并发计数在锁内完成。额度和一分钟窗口不变，仍为单实例内存限流。
+- API、拒绝和错误响应统一附带 CSP、防嵌入及 no-store；正常静态页面沿用自身 CSP。live 设置一年 HSTS，不设置 includeSubDomains/preload，避免影响其他子域。
+- 漏洞扫描发现教程渲染依赖 goldmark 的 GO-2026-5320（XSS），升级 1.7.8 → 1.7.17；教程仍只使用内嵌 Markdown。golang.org/x/sys 升级到 0.44.0 修复 Windows 模块公告 GO-2026-5024。Go 1.25.11 标准库扫描存在20项可达公告，项目工具链、CI、Docker构建更新为 Go 1.26.11；原 Go 1.23 最低要求相应提升为 1.26。
+- 微信浏览器测试修复导航清理响应体的竞态：通过 Playwright route 在转发原响应前读取 JSON，不 mock 或改写支付响应。独立 demo 服务五场景均通过。
+- 本轮只使用 `/tmp` 演示数据库和 mock 支付供应商；没有访问真实商户、扣款或修改仓库原有数据库。完整测试结果见本轮提交说明；源码扫描不能替代商户实测或容器镜像审计。
+
+本轮最终验证：Go 1.26.11 下 `make test`（全量 race + vet）、server/token 构建通过；govulncheck v1.9.0 输出 `No vulnerabilities found`。桌面/手机 Stripe、Allscale 及四家买币流程通过；微信 mini/jsapi/h5/native/app 五场景在独立服务中通过。实际 HTTP 验证恶意 Host 返回403、配置 Host 演示登录返回200。未构建/扫描 Docker 镜像，未做真实商户验收。

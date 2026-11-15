@@ -20,11 +20,22 @@ const fs = require("node:fs");
       await page.locator("#wechat-scene").selectOption(scene);
       assert.match(await page.locator("#wechat-quote").innerText(), /222\.23/);
       const before = Number((await page.locator("#balance").innerText()).replaceAll(",", ""));
-      const created = page.waitForResponse((r) => r.url() === `${base}/topups` && r.request().method() === "POST");
+      // 在跳转前复制响应体，避免导航清理 Network 响应导致读取失败。
+      const created = new Promise((resolve, reject) => {
+        page.route(`${base}/topups`, async route => {
+          if (route.request().method() !== "POST") return route.continue();
+          try {
+            const response = await route.fetch();
+            const order = await response.json();
+            resolve({ status: response.status(), order });
+            await route.fulfill({ response });
+          } catch (error) { reject(error); await route.abort(); }
+        }).catch(reject);
+      });
       await page.locator("#checkout").click();
       const response = await created;
-      assert.equal(response.status(), 201);
-      const order = await response.json();
+      assert.equal(response.status, 201);
+      const order = response.order;
       assert.equal(order.gateway, "wechat");
       assert.equal(order.payment_currency, "CNY");
       assert.equal(order.payment_amount_minor, 22223);

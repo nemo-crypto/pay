@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,19 +67,22 @@ func (a *API) limit(key string, max int) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := time.Now()
-	if len(a.limits) > 5000 {
+	if len(a.limits) >= 5000 {
 		for k, b := range a.limits {
 			if now.Sub(b.Start) > time.Minute {
 				delete(a.limits, k)
 			}
 		}
-		if len(a.limits) > 10000 {
+		if _, exists := a.limits[key]; !exists && len(a.limits) >= 10000 {
 			return false
 		}
 	}
 	b := a.limits[key]
 	if now.Sub(b.Start) >= time.Minute {
 		b = bucket{Start: now}
+	}
+	if b.Count >= max {
+		return false
 	}
 	b.Count++
 	a.limits[key] = b
@@ -228,6 +232,19 @@ func (a *API) Handler(static http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+		if a.Service.Config.Mode == "live" {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		// 本机监听仍可能被 DNS rebinding 访问；演示登录必须限定配置的 Host。
+		if a.Service.Config.Mode == "demo" {
+			public, err := url.Parse(a.Service.Config.PublicURL)
+			if err != nil || !strings.EqualFold(r.Host, public.Host) {
+				write(w, http.StatusForbidden, map[string]string{"code": "HOST_NOT_ALLOWED"})
+				return
+			}
+		}
 		if origin := r.Header.Get("Origin"); origin != "" {
 			allowed := false
 			for _, o := range a.Service.Config.Origins {

@@ -9,7 +9,6 @@ import (
 	"net/netip"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nemo-crypto/pay/internal/auth"
@@ -70,12 +69,7 @@ func clientIP(r *http.Request) string {
 }
 func (e *Engine) Handler(a auth.Auth, static http.Handler) http.Handler {
 	m := http.NewServeMux()
-	var mu sync.Mutex
-	type bucket struct {
-		At time.Time
-		N  int
-	}
-	limits := map[string]bucket{}
+	limits := &requestLimiter{capacity: 10000}
 	secure := func(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			c, err := a.Parse(r.Header.Get("Authorization"))
@@ -87,24 +81,7 @@ func (e *Engine) Handler(a auth.Auth, static http.Handler) http.Handler {
 				respond(w, 403, map[string]string{"code": "GUEST_NOT_ELIGIBLE"})
 				return
 			}
-			mu.Lock()
-			now := time.Now()
-			if len(limits) > 1000 {
-				for k, v := range limits {
-					if now.Sub(v.At) > time.Minute {
-						delete(limits, k)
-					}
-				}
-			}
-			b := limits[c.Subject]
-			if now.Sub(b.At) > time.Minute {
-				b = bucket{At: now}
-			}
-			b.N++
-			limits[c.Subject] = b
-			blocked := b.N > 120 || len(limits) > 10000
-			mu.Unlock()
-			if blocked {
+			if !limits.allow(c.Subject, time.Now()) {
 				w.Header().Set("Retry-After", "60")
 				respond(w, 429, map[string]string{"code": "RATE_LIMIT"})
 				return

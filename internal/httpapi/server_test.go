@@ -57,6 +57,7 @@ func setup(t *testing.T) fixture {
 }
 func (f fixture) call(method, path, body, key string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r.Host = "localhost"
 	if f.token != "" {
 		r.Header.Set("Authorization", "Bearer "+f.token)
 	}
