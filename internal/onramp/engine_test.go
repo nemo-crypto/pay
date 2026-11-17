@@ -15,7 +15,7 @@ import (
 	"github.com/nemo-crypto/pay/internal/store"
 )
 
-func fixture(t *testing.T) *Engine {
+func fixture(t testing.TB) *Engine {
 	t.Helper()
 	db, err := store.Open(filepath.Join(t.TempDir(), "pay.db"))
 	if err != nil {

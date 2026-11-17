@@ -16,10 +16,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nemo-crypto/pay/internal/concurrency"
 	"github.com/nemo-crypto/pay/internal/payment"
 )
 
 type Adapter struct {
+	refresh                                                                       concurrency.Group[string]
 	TokenStore                                                                    *sql.DB
 	Name, Key, Secret, WebhookSecret, PublicURL, API, SessionAPI, Widget, RampKey string
 	HTTP                                                                          *http.Client
@@ -139,34 +141,38 @@ func (a *Adapter) call(ctx context.Context, method, endpoint string, headers map
 	return raw, nil
 }
 func (a *Adapter) accessToken(ctx context.Context) (string, error) {
-	a.tokenMu.Lock()
-	defer a.tokenMu.Unlock()
-	if a.Token != "" && time.Now().Add(time.Minute).Before(a.TokenExpires) {
-		return a.Token, nil
-	}
-	b, e := a.call(ctx, "POST", a.API+"/partners/api/v2/refresh-token", map[string]string{"x-api-key": a.Key, "api-secret": a.Secret}, map[string]string{"apiKey": a.Key})
-	if e != nil {
-		return "", e
-	}
-	m, e := jsonMap(b)
-	if e != nil {
-		return "", e
-	}
-	d := object(m, "data")
-	token := str(d, "accessToken")
-	exp, e := strconv.ParseInt(str(d, "expiresAt"), 10, 64)
-	if e != nil || token == "" || exp <= time.Now().Unix() {
-		return "", fmt.Errorf("invalid partner token")
-	}
-	if a.TokenStore != nil {
-		if _, err := a.TokenStore.ExecContext(ctx, "INSERT INTO onramp_tokens VALUES(?,?,?,?) ON CONFLICT(provider) DO UPDATE SET token=excluded.token,previous=excluded.previous,expires=excluded.expires", a.Name, token, a.Token, exp); err != nil {
-			return "", fmt.Errorf("token persistence failed")
+	return a.refresh.Do(ctx, "token", func() (string, error) {
+		a.tokenMu.Lock()
+		current, expires := a.Token, a.TokenExpires
+		a.tokenMu.Unlock()
+		if current != "" && time.Now().Add(time.Minute).Before(expires) {
+			return current, nil
 		}
-	}
-	a.PreviousToken = a.Token
-	a.Token = token
-	a.TokenExpires = time.Unix(exp, 0)
-	return token, nil
+		// Do not hold tokenMu over network/SQL: incoming signed webhooks must still verify.
+		b, err := a.call(ctx, "POST", a.API+"/partners/api/v2/refresh-token", map[string]string{"x-api-key": a.Key, "api-secret": a.Secret}, map[string]string{"apiKey": a.Key})
+		if err != nil {
+			return "", err
+		}
+		m, err := jsonMap(b)
+		if err != nil {
+			return "", err
+		}
+		d := object(m, "data")
+		token := str(d, "accessToken")
+		exp, err := strconv.ParseInt(str(d, "expiresAt"), 10, 64)
+		if err != nil || token == "" || exp <= time.Now().Unix() {
+			return "", fmt.Errorf("invalid partner token")
+		}
+		if a.TokenStore != nil {
+			if _, err := a.TokenStore.ExecContext(ctx, "INSERT INTO onramp_tokens VALUES(?,?,?,?) ON CONFLICT(provider) DO UPDATE SET token=excluded.token,previous=excluded.previous,expires=excluded.expires", a.Name, token, current, exp); err != nil {
+				return "", fmt.Errorf("token persistence failed")
+			}
+		}
+		a.tokenMu.Lock()
+		a.PreviousToken, a.Token, a.TokenExpires = current, token, time.Unix(exp, 0)
+		a.tokenMu.Unlock()
+		return token, nil
+	})
 }
 func (a *Adapter) callback(o Order) string {
 	return a.PublicURL + "/onramp/webhooks/" + a.Name + "?order_id=" + url.QueryEscape(o.ID) + "&binding=" + url.QueryEscape(o.CallbackToken)

@@ -86,23 +86,24 @@ func run() error {
 	api.Onramp = ramps
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(cfg.Interval)
-		defer ticker.Stop()
-		svc.Tick(ctx)
-		ramps.Tick(ctx)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				svc.Tick(ctx)
-				ramps.Tick(ctx)
+	// Independent loops prevent slow top-up providers from starving onramp callbacks.
+	done := make(chan struct{}, 2)
+	for _, tick := range []func(context.Context){svc.Tick, ramps.Tick} {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			ticker := time.NewTicker(cfg.Interval)
+			defer ticker.Stop()
+			tick(ctx)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					tick(ctx)
+				}
 			}
-		}
-	}()
+		}()
+	}
 	server := &http.Server{Addr: cfg.Addr, Handler: api.Handler(web.Handler()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16384}
 	go func() {
 		<-ctx.Done()
@@ -113,6 +114,7 @@ func run() error {
 	slog.Info("payment server ready", "mode", cfg.Mode, "address", cfg.Addr)
 	e = server.ListenAndServe()
 	stop()
+	<-done
 	<-done
 	if errors.Is(e, http.ErrServerClosed) {
 		return nil

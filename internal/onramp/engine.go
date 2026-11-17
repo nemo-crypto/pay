@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nemo-crypto/pay/internal/concurrency"
 	"github.com/nemo-crypto/pay/internal/payment"
 )
 
@@ -18,6 +19,7 @@ type Engine struct {
 	Mode, PublicURL string
 	Adapters        map[string]*Adapter
 	worker          sync.Mutex
+	syncs           concurrency.Group[struct{}]
 }
 type record struct {
 	Order                                    Order
@@ -45,6 +47,7 @@ func New(db *sql.DB, mode, public string) (*Engine, error) {
 	}
 	_, e = db.Exec(`CREATE TABLE IF NOT EXISTS onramp_orders(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,provider TEXT NOT NULL,idem TEXT NOT NULL,fingerprint TEXT NOT NULL,ref TEXT,status TEXT NOT NULL,next_check INTEGER NOT NULL,created INTEGER NOT NULL,data TEXT NOT NULL,UNIQUE(user_id,idem),UNIQUE(provider,ref));
  CREATE TABLE IF NOT EXISTS onramp_events(provider TEXT NOT NULL,event_id TEXT NOT NULL,order_id TEXT NOT NULL,snapshot TEXT NOT NULL,processed INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL,PRIMARY KEY(provider,event_id));
+ CREATE INDEX IF NOT EXISTS onramp_user_created ON onramp_orders(user_id,created DESC);
  CREATE INDEX IF NOT EXISTS onramp_due ON onramp_orders(status,next_check);
  CREATE INDEX IF NOT EXISTS onramp_inbox_due ON onramp_events(processed,created);
  CREATE TABLE IF NOT EXISTS onramp_tokens(provider TEXT PRIMARY KEY,token TEXT NOT NULL,previous TEXT NOT NULL,expires INTEGER NOT NULL);
@@ -356,34 +359,30 @@ func (e *Engine) Tick(ctx context.Context) {
 		}
 	}
 	rows.Close()
-	for _, o := range orders {
-		if ctx.Err() != nil {
+	concurrency.Each(ctx, orders, 8, func(o Order) {
+		if _, err := e.DB.ExecContext(ctx, "UPDATE onramp_orders SET next_check=? WHERE id=?", time.Now().Add(30*time.Second).Unix(), o.ID); err != nil {
 			return
 		}
-		_, _ = e.DB.ExecContext(ctx, "UPDATE onramp_orders SET next_check=? WHERE id=?", time.Now().Add(30*time.Second).Unix(), o.ID)
-		a := e.Adapters[o.Provider]
-		if a == nil {
-			continue
-		}
-		if s, err := a.Fetch(ctx, o); err == nil {
-			_ = e.apply(ctx, o.ID, s, "")
-		}
-	}
+		_, _ = e.Sync(ctx, o.User, o.ID)
+	})
 }
 func (e *Engine) Sync(ctx context.Context, user, id string) (Order, error) {
 	o, err := e.Get(ctx, user, id)
 	if err != nil {
 		return o, err
 	}
-	a := e.Adapters[o.Provider]
-	if a == nil {
-		return o, ErrNotFound
-	}
-	s, err := a.Fetch(ctx, o)
+	_, err = e.syncs.Do(ctx, o.Provider+":"+id, func() (struct{}, error) {
+		a := e.Adapters[o.Provider]
+		if a == nil {
+			return struct{}{}, ErrNotFound
+		}
+		snapshot, err := a.Fetch(ctx, o)
+		if err != nil {
+			return struct{}{}, providerError(err)
+		}
+		return struct{}{}, e.apply(ctx, id, snapshot, "")
+	})
 	if err != nil {
-		return o, providerError(err)
-	}
-	if err = e.apply(ctx, id, s, ""); err != nil {
 		return o, err
 	}
 	return e.Get(ctx, user, id)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -35,7 +36,18 @@ func Open(path string) (*Store, error) {
 			return nil, e
 		}
 	}
-	db, e := sql.Open("sqlite", path)
+	// Acquire the write reservation before transactional reads. Separate Store
+	// instances must not race read-to-write upgrades (SQLITE_BUSY_SNAPSHOT).
+	dsn := ":memory:?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	if path != ":memory:" {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return nil, err
+		}
+		u := url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}
+		dsn = u.String() + "?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	}
+	db, e := sql.Open("sqlite", dsn)
 	if e != nil {
 		return nil, e
 	}
@@ -48,6 +60,8 @@ func Open(path string) (*Store, error) {
  CREATE INDEX IF NOT EXISTS order_due ON orders(next_check,created) WHERE status='pending' OR (ref IS NOT NULL AND status IN ('failed','expired'));
  CREATE TABLE IF NOT EXISTS requests(user_id TEXT NOT NULL,key TEXT NOT NULL,hash TEXT NOT NULL,order_id TEXT NOT NULL REFERENCES orders(id),PRIMARY KEY(user_id,key));
  CREATE TABLE IF NOT EXISTS ledger(id TEXT PRIMARY KEY,order_id TEXT NOT NULL REFERENCES orders(id),user_id TEXT NOT NULL,kind TEXT NOT NULL,delta INTEGER NOT NULL,created INTEGER NOT NULL,UNIQUE(order_id,kind));
+ CREATE INDEX IF NOT EXISTS ledger_user ON ledger(user_id,created DESC);
+ CREATE INDEX IF NOT EXISTS order_reuse ON orders(user_id,reuse_hash,created DESC) WHERE status='pending' AND abandoned=0 AND ref IS NOT NULL;
  CREATE TABLE IF NOT EXISTS inbox(gateway TEXT NOT NULL,id TEXT NOT NULL,nonce TEXT,body_hash TEXT NOT NULL,snapshot TEXT NOT NULL,processed INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,PRIMARY KEY(gateway,id),UNIQUE(gateway,nonce));
  CREATE INDEX IF NOT EXISTS inbox_pending ON inbox(created,next_attempt) WHERE processed=0;`
 	if _, e = db.Exec(schema); e != nil {

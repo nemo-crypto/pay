@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nemo-crypto/pay/internal/concurrency"
 	"github.com/nemo-crypto/pay/internal/config"
 	"github.com/nemo-crypto/pay/internal/payment"
 	"github.com/nemo-crypto/pay/internal/store"
@@ -24,6 +25,7 @@ type Service struct {
 	Providers map[string]payment.Provider
 	Config    config.Config
 	worker    sync.Mutex
+	syncs     concurrency.Group[struct{}]
 }
 type CreateInput struct {
 	PlanID       string `json:"plan_id"`
@@ -292,18 +294,21 @@ func checkoutExpired(c *payment.Checkout) bool {
 	return c != nil && c.ExpiresAt != nil && !time.Now().Before(*c.ExpiresAt)
 }
 func (s *Service) Sync(ctx context.Context, o payment.Order) error {
-	if o.Ref == "" {
-		return nil
-	}
-	p, ok := s.Providers[o.Gateway]
-	if !ok {
-		return fmt.Errorf("provider unavailable")
-	}
-	snap, e := p.Fetch(ctx, o)
-	if e != nil {
-		return e
-	}
-	return s.Store.Apply(ctx, o.Gateway, snap, "")
+	_, err := s.syncs.Do(ctx, o.Gateway+":"+o.ID, func() (struct{}, error) {
+		if o.Ref == "" {
+			return struct{}{}, nil
+		}
+		p, ok := s.Providers[o.Gateway]
+		if !ok {
+			return struct{}{}, fmt.Errorf("provider unavailable")
+		}
+		snap, e := p.Fetch(ctx, o)
+		if e != nil {
+			return struct{}{}, e
+		}
+		return struct{}{}, s.Store.Apply(ctx, o.Gateway, snap, "")
+	})
+	return err
 }
 func (s *Service) Tick(ctx context.Context) {
 	if !s.worker.TryLock() {
@@ -326,24 +331,26 @@ func (s *Service) Tick(ctx context.Context) {
 		slog.Error("reconcile query failed")
 		return
 	}
-	for _, o := range due {
+	concurrency.Each(ctx, due, 8, func(o payment.Order) {
 		if ctx.Err() != nil {
 			return
 		}
-		_ = s.Store.Defer(ctx, o.ID)
+		if err := s.Store.Defer(ctx, o.ID); err != nil {
+			return
+		}
 		if o.Ref == "" {
 			if o.Gateway == "stripe" {
 				if !time.Now().Before(o.ExpiresAt.Add(-30 * time.Minute)) {
 					_ = s.Store.CreateUnknown(ctx, o.ID)
-					continue
+					return
 				}
 				ok, e := s.Store.ClaimCreation(ctx, o.ID)
 				if e != nil || !ok {
-					continue
+					return
 				}
 				p := s.Providers[o.Gateway]
 				if p == nil {
-					continue
+					return
 				}
 				session, e := p.Create(ctx, o)
 				if e == nil {
@@ -353,12 +360,12 @@ func (s *Service) Tick(ctx context.Context) {
 					slog.Warn("checkout recovery pending", "order_id", o.ID)
 				}
 			}
-			continue
+			return
 		}
-		if e = s.Sync(ctx, o); e != nil {
+		if err := s.Sync(ctx, o); err != nil {
 			slog.Warn("payment reconciliation deferred", "order_id", o.ID)
 		}
-	}
+	})
 }
 func MapError(e error) *Error {
 	var api *Error

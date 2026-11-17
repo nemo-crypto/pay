@@ -62,6 +62,8 @@ func TestTopupLimiterCapacityPreservesExistingUsers(t *testing.T) {
 		b.Start = now.Add(-2 * time.Minute)
 		f.api.limits[k] = b
 	}
+	// Simulate the sweep clock advancing together with expired bucket timestamps.
+	f.api.nextSweep = now.Add(-time.Second)
 	if !f.api.limit("new", 10) {
 		t.Fatal("expired slots not released")
 	}

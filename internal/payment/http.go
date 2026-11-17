@@ -14,8 +14,17 @@ import (
 	"time"
 )
 
+// Shared bounded pool reuses TLS connections across all provider clients.
+var providerTransport = func() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConns = 128
+	t.MaxIdleConnsPerHost = 32
+	t.MaxConnsPerHost = 32
+	return t
+}()
+
 func Client() *http.Client {
-	return &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return &http.Client{Transport: providerTransport, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 func BodyHash(body []byte) string { s := sha256.Sum256(body); return hex.EncodeToString(s[:]) }
 func MAC(secret, canonical string) string {

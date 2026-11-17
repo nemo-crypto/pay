@@ -10,9 +10,10 @@ type requestBucket struct {
 	N  int
 }
 type requestLimiter struct {
-	mu       sync.Mutex
-	buckets  map[string]requestBucket
-	capacity int
+	mu        sync.Mutex
+	buckets   map[string]requestBucket
+	capacity  int
+	nextSweep time.Time
 }
 
 // 达到容量时拒绝新主体，不能继续插入；已有主体不受其他账号挤占影响。
@@ -22,7 +23,8 @@ func (l *requestLimiter) allow(key string, now time.Time) bool {
 	if l.buckets == nil {
 		l.buckets = make(map[string]requestBucket)
 	}
-	if len(l.buckets) >= l.capacity {
+	if len(l.buckets) >= l.capacity && !now.Before(l.nextSweep) {
+		l.nextSweep = now.Add(time.Second)
 		for k, b := range l.buckets {
 			if now.Sub(b.At) >= time.Minute {
 				delete(l.buckets, k)

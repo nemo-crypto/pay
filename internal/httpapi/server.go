@@ -26,11 +26,12 @@ import (
 )
 
 type API struct {
-	Service *service.Service
-	Onramp  *onramp.Engine
-	Auth    auth.Auth
-	mu      sync.Mutex
-	limits  map[string]bucket
+	Service   *service.Service
+	Onramp    *onramp.Engine
+	Auth      auth.Auth
+	mu        sync.Mutex
+	limits    map[string]bucket
+	nextSweep time.Time
 }
 type bucket struct {
 	Start time.Time
@@ -67,15 +68,16 @@ func (a *API) limit(key string, max int) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := time.Now()
-	if len(a.limits) >= 5000 {
+	if len(a.limits) >= 5000 && !now.Before(a.nextSweep) {
+		a.nextSweep = now.Add(time.Second)
 		for k, b := range a.limits {
 			if now.Sub(b.Start) > time.Minute {
 				delete(a.limits, k)
 			}
 		}
-		if _, exists := a.limits[key]; !exists && len(a.limits) >= 10000 {
-			return false
-		}
+	}
+	if _, exists := a.limits[key]; !exists && len(a.limits) >= 10000 {
+		return false
 	}
 	b := a.limits[key]
 	if now.Sub(b.Start) >= time.Minute {
