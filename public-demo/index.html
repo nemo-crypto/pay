@@ -71,9 +71,38 @@
               <button type="button" id="advance" class="button primary"></button>
               <button type="button" id="replay" class="button secondary" hidden>重放同一通知</button>
               <button type="button" id="reset" class="button secondary" hidden>重新演练</button>
+              <a class="button secondary" href="#api-inspector">查看本步接口 ↓</a>
             </div>
           </section>
         </div>
+        <section class="api-inspector" id="api-inspector" aria-labelledby="api-title">
+          <div class="api-heading">
+            <div><h3 id="api-title">接口与 JSON</h3><p id="api-step"></p></div>
+            <label id="api-choice-label">查看交互 <select id="api-choice"></select></label>
+          </div>
+          <p class="api-note">以下为仓库接口和适配器的教学样例，省略非关键字段。公开演练在浏览器内运行。</p>
+          <div class="api-route"><strong id="api-method"></strong><code id="api-path"></code></div>
+          <p class="api-direction" id="api-direction"></p>
+          <div class="api-payloads">
+            <div class="api-block">
+              <div class="api-block-heading"><h4>请求 <span id="api-encoding"></span></h4><button type="button" data-copy="api-request" class="copy">复制数据</button></div>
+              <pre id="api-request" tabindex="0" aria-label="请求样例"></pre>
+              <details class="api-headers" id="api-headers" hidden><summary>查看请求 Headers</summary><pre id="api-headers-body" tabindex="0" aria-label="请求 Headers"></pre></details>
+            </div>
+            <div class="api-block">
+              <div class="api-block-heading"><h4>响应 <span id="api-status"></span></h4><button type="button" data-copy="api-response" class="copy">复制响应</button></div>
+              <pre id="api-response" tabindex="0" aria-label="响应样例"></pre>
+            </div>
+          </div>
+          <details class="api-decoded" id="api-decoded" hidden>
+            <summary>查看验证后的业务 JSON</summary>
+            <pre id="api-decoded-body" tabindex="0" aria-label="验证后的业务 JSON"></pre>
+          </details>
+          <h4 class="fields-title">联调要核对的字段</h4>
+          <dl class="api-fields" id="api-fields"></dl>
+          <p class="api-next"><strong>页面或服务端下一步</strong> <span id="api-next"></span></p>
+          <p class="copy-status" id="copy-status" role="status"></p>
+        </section>
         <details class="event-history">
           <summary>查看本次演练记录</summary>
           <p id="event-empty">还没有记录。创建订单后，这里会显示每一步生成的结果。</p>

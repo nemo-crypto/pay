@@ -1,4 +1,6 @@
 import { providers, wechatScenes } from './flows.js';
+import { contractsFor } from './contracts.js';
+import { showStepContracts } from './dev-panel.js';
 
 const byId = id => document.getElementById(id);
 const advance = byId('advance');
@@ -160,6 +162,11 @@ function render() {
   replay.hidden = !finished || scenario.value !== 'duplicate' || run.replayed;
   reset.hidden = run.step === 0 && !run.failed;
   renderEvents(run);
+  showStepContracts(
+    [runKey(), selected, run.replayed].join(':'),
+    step.title,
+    contractsFor(active, scene.value, scenario.value, selected, steps.length, run.replayed),
+  );
 }
 
 advance.addEventListener('click', () => {
