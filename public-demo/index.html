@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="七通道支付教学实验室，逐步演练储值、法币买币与服务端到账确认。">
+  <title>Pay Lab · 七通道支付实验室</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="shell topbar">
+    <a class="wordmark" href="./"><span aria-hidden="true">P</span>Pay Lab</a>
+    <a class="external" href="https://github.com/nemo-crypto/pay#readme">GitHub 源码与本地教程 ↗</a>
+  </header>
+  <main class="shell">
+    <section class="hero" aria-labelledby="title">
+      <div>
+        <h1 id="title">一笔支付，<br><em>怎样才算到账？</em></h1>
+        <p>选一种支付通道，亲手从创建订单走到确认到账。对照储值和法币买币两条路径，看清用户操作、服务端确认和最终资产分别发生在哪一步。</p>
+        <a class="button primary" href="#lab">开始演练 <span aria-hidden="true">↓</span></a>
+      </div>
+      <dl class="hero-notes">
+        <div><dt>储值</dt><dd>微信支付、Stripe、Allscale → 平台点数</dd></div>
+        <div><dt>法币买币</dt><dd>MoonPay、Alchemy Pay、Transak、Ramp → 教学钱包中的模拟 USDC</dd></div>
+        <div><dt>演练数据</dt><dd>订单在浏览器中模拟。不会扣款、提交身份资料或连接钱包。</dd></div>
+      </dl>
+    </section>
+    <section class="lab" id="lab" aria-labelledby="lab-title">
+      <div class="picker">
+        <h2 id="lab-title">选择支付通道</h2>
+        <fieldset><legend>储值</legend><div id="topup-options" class="providers"></div></fieldset>
+        <fieldset><legend>法币买币</legend><div id="onramp-options" class="providers"></div></fieldset>
+      </div>
+      <div class="workspace">
+        <div class="workspace-heading">
+          <div><p class="category" id="category"></p><h2 id="provider"></h2></div>
+          <a class="external" id="guide" href="https://github.com/nemo-crypto/pay#readme">接入教程 ↗</a>
+        </div>
+        <p id="description"></p>
+        <dl class="amounts"><div><dt>订单金额</dt><dd id="amount"></dd></div><div><dt>确认后的资产</dt><dd id="asset"></dd></div></dl>
+        <div class="step-head"><h3>订单时间线</h3><span id="status" role="status"></span></div>
+        <ol id="timeline" class="timeline"></ol>
+        <p class="feedback" id="feedback" aria-live="polite"></p>
+        <div class="controls">
+          <button type="button" id="advance" class="button primary"></button>
+          <button type="button" id="fail" class="button secondary" hidden>模拟失败</button>
+          <button type="button" id="reset" class="button secondary" hidden>重新演练</button>
+        </div>
+      </div>
+    </section>
+    <details class="lesson"><summary>为什么看到「支付成功」还要等确认？</summary>
+      <p>收银台回跳可以提示页面去查单。正式集成由服务端核验回调签名或主动查单，核对订单标识、金额和币种，再更新订单。同一笔确认重复到达，也只能发放一次权益。</p>
+      <p>法币买币还要分别记录支付结果和资产交付。页面中的费用和到账金额是教学参数，完整验签、查询与对账可在本地 Go 服务演练。</p>
+    </details>
+  </main>
+</body>
+</html>
