@@ -17,8 +17,8 @@
     <section class="hero" aria-labelledby="title">
       <div>
         <h1 id="title">一笔支付，<br><em>怎样才算到账？</em></h1>
-        <p>选一种支付通道，亲手从创建订单走到确认到账。对照储值和法币买币两条路径，看清用户操作、服务端确认和最终资产分别发生在哪一步。</p>
-        <a class="button primary" href="#lab">开始演练 <span aria-hidden="true">↓</span></a>
+        <p>从七种支付通道中选择一条路线，体验创建订单、收银台操作、服务端确认和资产到账。遇到付款失败或通知丢失时，还能练习如何判断下一步。</p>
+        <a class="button primary" href="#lab">选通道开始演练 <span aria-hidden="true">↓</span></a>
       </div>
       <dl class="hero-notes">
         <div><dt>储值</dt><dd>微信支付、Stripe、Allscale → 平台点数</dd></div>
@@ -37,16 +37,48 @@
           <div><p class="category" id="category"></p><h2 id="provider"></h2></div>
           <a class="external" id="guide" href="https://github.com/nemo-crypto/pay#readme">接入教程 ↗</a>
         </div>
-        <p id="description"></p>
-        <dl class="amounts"><div><dt>订单金额</dt><dd id="amount"></dd></div><div><dt>确认后的资产</dt><dd id="asset"></dd></div></dl>
-        <div class="step-head"><h3>订单时间线</h3><span id="status" role="status"></span></div>
-        <ol id="timeline" class="timeline"></ol>
-        <p class="feedback" id="feedback" aria-live="polite"></p>
-        <div class="controls">
-          <button type="button" id="advance" class="button primary"></button>
-          <button type="button" id="fail" class="button secondary" hidden>模拟失败</button>
-          <button type="button" id="reset" class="button secondary" hidden>重新演练</button>
+        <p id="description" class="flow-intro"></p>
+        <div class="settings">
+          <label id="wechat-settings">微信场景 <select id="wechat-scene"></select></label>
+          <label>演练情形
+            <select id="scenario">
+              <option value="success">正常完成</option>
+              <option value="failure">付款失败</option>
+              <option value="missing">通知丢失后补查</option>
+              <option value="duplicate">收到重复通知</option>
+            </select>
+          </label>
         </div>
+        <dl class="amounts">
+          <div><dt>教学金额</dt><dd id="amount"></dd></div>
+          <div><dt>付款状态</dt><dd id="payment-state"></dd></div>
+          <div><dt>资产状态</dt><dd id="asset"></dd></div>
+        </dl>
+        <div class="step-head"><h3>订单时间线</h3><span id="status" role="status"></span></div>
+        <p class="step-help">点击任意步骤可预览或回看。执行当前步骤后，订单状态才会变化。</p>
+        <div class="run-grid">
+          <ol id="timeline" class="timeline"></ol>
+          <section class="step-detail" aria-labelledby="step-title">
+            <p class="category" id="step-role"></p>
+            <h3 id="step-title" tabindex="-1"></h3>
+            <dl class="step-explanation">
+              <div><dt>用户会看到</dt><dd id="step-user"></dd></div>
+              <div><dt>服务端怎样处理</dt><dd id="step-server"></dd></div>
+            </dl>
+            <div class="evidence"><span id="evidence-key"></span><strong id="evidence-value"></strong></div>
+            <p class="feedback" id="feedback" aria-live="polite"></p>
+            <div class="controls">
+              <button type="button" id="advance" class="button primary"></button>
+              <button type="button" id="replay" class="button secondary" hidden>重放同一通知</button>
+              <button type="button" id="reset" class="button secondary" hidden>重新演练</button>
+            </div>
+          </section>
+        </div>
+        <details class="event-history">
+          <summary>查看本次演练记录</summary>
+          <p id="event-empty">还没有记录。创建订单后，这里会显示每一步生成的结果。</p>
+          <ol id="events" class="event-list"></ol>
+        </details>
       </div>
     </section>
     <details class="lesson"><summary>为什么看到「支付成功」还要等确认？</summary>

@@ -1,33 +1,22 @@
-const providers = [
-  { id: 'wechat', name: '微信支付', note: '模拟微信场景收银台，查看报价、服务端通知与平台点数的关系。' },
-  { id: 'stripe', name: 'Stripe', note: '模拟托管收银台，区分银行卡付款完成和服务端确认入账。' },
-  { id: 'allscale', name: 'Allscale', note: '模拟稳定币收银台，观察链上付款确认后平台点数怎样入账。' },
-  { id: 'moonpay', name: 'MoonPay', onramp: true, note: '通过托管买币页演练身份确认、法币付款与钱包交付。' },
-  { id: 'alchemypay', name: 'Alchemy Pay', onramp: true, note: '通过 Ramp Page 演练订单状态查询，并核对最终交付。' },
-  { id: 'transak', name: 'Transak', onramp: true, note: '从一次性 Widget 会话开始，区分付款完成与供应商交付。' },
-  { id: 'ramp', name: 'Ramp', onramp: true, note: '从托管页面发起购买，用订单状态跟踪支付和资产发送。' },
-];
+import { providers, wechatScenes } from './flows.js';
 
-const topup = [
-  ['创建订单', '等用户发起模拟储值', '创建演示订单'],
-  ['完成付款', '等待收银台返回付款结果', '模拟付款成功'],
-  ['确认入账', '服务端确认订单后发放点数', '模拟服务端确认'],
-];
-const onramp = [
-  ['创建订单', '等用户发起模拟买币', '创建演示订单'],
-  ['通过身份确认', '模拟供应商核验结果', '模拟通过'],
-  ['完成付款', '等待供应商确认法币已付', '模拟付款成功'],
-  ['确认交付', '服务端确认模拟钱包已到账', '模拟资产交付'],
-];
-
-const labels = ['未创建', '待处理', '已完成', '已失败'];
 const byId = id => document.getElementById(id);
 const advance = byId('advance');
-const fail = byId('fail');
+const replay = byId('replay');
 const reset = byId('reset');
+const scene = byId('wechat-scene');
+const scenario = byId('scenario');
+const runs = new Map();
 let active = providers[0];
-let index = 0;
-let failed = false;
+let inspected = null;
+
+function setCopy(id, value) {
+  byId(id).textContent = value;
+}
+
+for (const [id, item] of Object.entries(wechatScenes)) {
+  scene.add(new Option(item.name, id));
+}
 
 for (const item of providers) {
   const label = document.createElement('label');
@@ -38,66 +27,169 @@ for (const item of providers) {
   input.checked = item === active;
   input.addEventListener('change', () => {
     active = item;
-    startOver();
+    openRun();
   });
-  const name = document.createElement('span');
+  const copy = document.createElement('span');
+  const name = document.createElement('strong');
+  const kind = document.createElement('small');
   name.textContent = item.name;
-  label.append(input, name);
+  kind.textContent = item.kind;
+  copy.append(name, kind);
+  label.append(input, copy);
   byId(item.onramp ? 'onramp-options' : 'topup-options').append(label);
 }
 
-function startOver() {
-  failed = false;
-  index = 0;
+function runKey() {
+  return [active.id, active.id === 'wechat' ? scene.value : '', scenario.value].join(':');
+}
+
+function currentRun() {
+  const key = runKey();
+  if (!runs.has(key)) runs.set(key, { step: 0, failed: false, replayed: false, events: [] });
+  return runs.get(key);
+}
+
+function openRun() {
+  inspected = null;
   render();
+}
+
+function currentSteps() {
+  return active.id === 'wechat' ? active.steps(scene.value) : active.steps;
+}
+
+function stepDetail(steps, index) {
+  const step = steps[index];
+  if (scenario.value === 'failure' && index === steps.length - 3) {
+    return {
+      ...step,
+      title: '收到失败或未完成结果',
+      action: '模拟付款失败',
+      customer: '页面提示本次付款未完成，订单没有发放点数或交付记录。',
+      server: '用供应商可信状态核对失败原因。遇到网络超时、结果仍未知时保留待确认，先查原单。此情形演练的是已明确失败的结果。',
+      evidence: ['演练异常', '已确认失败 · 资产未发放'],
+    };
+  }
+  if (scenario.value === 'missing' && index === steps.length - 2) {
+    return {
+      ...step,
+      title: '通知未到，主动补查',
+      action: '查询原订单',
+      customer: '页面停在付款已提交、等待确认。可以刷新状态，不需要重新付款。',
+      server: active.query,
+      evidence: ['恢复方式', '已验证原订单查询结果'],
+    };
+  }
+  return step;
+}
+
+function renderTimeline(steps, run, selected) {
+  byId('timeline').replaceChildren(...steps.map((_, index) => {
+    const row = document.createElement('li');
+    const button = document.createElement('button');
+    const title = document.createElement('strong');
+    const state = document.createElement('small');
+    button.type = 'button';
+    row.dataset.state = index < run.step ? 'done' : index > run.step ? 'waiting' : run.failed ? 'failed' : 'current';
+    button.setAttribute('aria-pressed', String(index === selected));
+    if (row.dataset.state === 'current') button.setAttribute('aria-current', 'step');
+    title.textContent = stepDetail(steps, index).title;
+    state.textContent = { done: '已完成', waiting: '未执行', current: '当前步骤', failed: '失败' }[row.dataset.state];
+    button.append(title, state);
+    button.addEventListener('click', () => {
+      inspected = index;
+      render();
+      byId('step-title').focus();
+    });
+    row.append(button);
+    return row;
+  }));
+}
+
+function renderEvents(run) {
+  byId('event-empty').hidden = Boolean(run.events.length);
+  byId('events').replaceChildren(...run.events.map(([key, value]) => {
+    const row = document.createElement('li');
+    const label = document.createElement('strong');
+    const content = document.createElement('span');
+    label.textContent = key;
+    content.textContent = value;
+    row.append(label, content);
+    return row;
+  }));
 }
 
 function render() {
-  const steps = active.onramp ? onramp : topup;
-  const finished = index === steps.length;
+  const run = currentRun();
+  const steps = currentSteps();
+  const finished = run.step === steps.length;
+  const selected = inspected ?? Math.min(run.step, steps.length - 1);
+  const previewing = inspected !== null && inspected !== run.step && !finished && !run.failed;
+  const step = stepDetail(steps, selected);
   const asset = active.onramp ? '29 模拟 USDC' : '2,000 模拟点数';
-  byId('category').textContent = active.onramp ? '法币买币' : '储值';
-  byId('provider').textContent = active.name;
-  byId('description').textContent = active.note;
-  byId('guide').href = 'https://github.com/nemo-crypto/pay/blob/main/docs/providers/' + active.id + '.md';
-  byId('amount').textContent = active.onramp ? '30 USD' : 'NT$1,000';
-  byId('asset').textContent = asset;
-  const status = byId('status');
-  status.textContent = labels[failed ? 3 : finished ? 2 : index ? 1 : 0];
-  status.dataset.state = failed ? 'failed' : finished ? 'done' : 'pending';
-  byId('timeline').replaceChildren(...steps.map(([title, copy], position) => {
-    const row = document.createElement('li');
-    row.dataset.state = position < index ? 'done' : position === index ? (failed ? 'failed' : 'current') : 'waiting';
-    if (position === index && !failed) row.setAttribute('aria-current', 'step');
-    const heading = document.createElement('strong');
-    heading.textContent = title;
-    const summary = document.createElement('span');
-    summary.textContent = position < index ? '已完成' : row.dataset.state === 'failed' ? '演练在这一步终止' : copy;
-    row.append(heading, summary);
-    return row;
-  }));
-  byId('feedback').textContent = failed ? '订单未完成，模拟资产没有变动。' : finished
-    ? '服务端已确认，到账 ' + asset + '。'
-    : index === steps.length - 1 ? '付款记录已出现，等待服务端确认结果。' : '';
-  advance.hidden = failed || finished;
-  advance.textContent = steps[index]?.[2] ?? '';
-  fail.hidden = failed || finished || index === 0;
-  reset.hidden = index === 0 && !failed;
+  const paid = run.step > steps.length - 3 && !run.failed;
+  const verified = run.step > steps.length - 2 && !run.failed;
+  const payment = !paid ? (run.failed ? '付款失败' : '未确认付款') : verified ? '已核实付款' : '已提交付款';
+  const progress = finished ? '已完成' : run.failed ? '已失败' : `${run.step + 1} / ${steps.length} 步`;
+  byId('wechat-settings').hidden = active.id !== 'wechat';
+  setCopy('category', active.onramp ? '法币买币' : '平台储值');
+  setCopy('provider', active.name);
+  setCopy('description', active.intro);
+  setCopy('amount', active.quote ?? '30 USD → Ethereum USDC');
+  setCopy('payment-state', payment);
+  setCopy('asset', finished ? asset : active.onramp ? '尚未交付 USDC' : '尚未发放点数');
+  setCopy('status', progress);
+  byId('status').dataset.state = finished ? 'done' : run.failed ? 'failed' : 'pending';
+  renderTimeline(steps, run, selected);
+  setCopy('step-role', step.actor);
+  setCopy('step-title', step.title);
+  setCopy('step-user', step.customer);
+  setCopy('step-server', step.server);
+  setCopy('evidence-key', (selected < run.step || (run.failed && selected === run.step) ? '已记录 · ' : '预期证据 · ') + step.evidence[0]);
+  setCopy('evidence-value', step.evidence[1]);
+
+  let feedback = '';
+  if (run.replayed) feedback = '相同通知已拦截，订单状态和到账金额保持不变。';
+  else if (finished) feedback = '本次演练完成，到账 ' + asset + '。';
+  else if (run.failed) feedback = '订单以失败结束，模拟资产没有变动。';
+  else if (previewing) feedback = '正在查看步骤说明，尚未执行此步骤。';
+  else if (run.step === steps.length - 2) feedback = '已有付款反馈，等待可核实的服务端结果。';
+  setCopy('feedback', feedback);
+  advance.textContent = previewing ? '回到当前步骤' : step.action;
+  advance.hidden = finished || run.failed;
+  replay.hidden = !finished || scenario.value !== 'duplicate' || run.replayed;
+  reset.hidden = run.step === 0 && !run.failed;
+  renderEvents(run);
 }
 
 advance.addEventListener('click', () => {
-  const steps = active.onramp ? onramp : topup;
-  if (!failed && index < steps.length) index++;
-  render();
-  if (advance.hidden) reset.focus();
+  const run = currentRun();
+  const steps = currentSteps();
+  if (run.failed || run.step >= steps.length) return;
+  if (inspected !== null && inspected !== run.step) {
+    openRun();
+    return;
+  }
+  const step = stepDetail(steps, run.step);
+  run.events.push(step.evidence);
+  if (scenario.value === 'failure' && run.step === steps.length - 3) run.failed = true;
+  else run.step++;
+  openRun();
+  if (advance.hidden) (replay.hidden ? reset : replay).focus();
 });
-fail.addEventListener('click', () => {
-  failed = true;
+replay.addEventListener('click', () => {
+  const run = currentRun();
+  if (run.replayed || scenario.value !== 'duplicate' || run.step !== currentSteps().length) return;
+  run.replayed = true;
+  run.events.push(['重复通知', '识别到与已处理事件相同的通知，跳过本次入账']);
   render();
   reset.focus();
 });
 reset.addEventListener('click', () => {
-  startOver();
+  runs.delete(runKey());
+  openRun();
   advance.focus();
 });
+scene.addEventListener('change', openRun);
+scenario.addEventListener('change', openRun);
 render();
